@@ -39,6 +39,3 @@ pip-log.txt
 *.egg-info/
 build/
 dist/
-
-# Project specific
-data-crawler/.env
