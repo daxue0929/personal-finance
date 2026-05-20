@@ -32,15 +32,15 @@ fi
 DOCKER_CONFIG="/etc/docker/daemon.json"
 BACKUP_FILE="/etc/docker/daemon.json.backup"
 
-if [ -f "$DOCKER_CONFIG" ]; then
-    echo "[1/4] 检测到 Docker 配置文件，备份并修复..."
-    cp "$DOCKER_CONFIG" "$BACKUP_FILE"
-    echo "{\"log-driver\": \"json-file\", \"log-opts\": {\"max-size\": \"10m\"}}" > "$DOCKER_CONFIG"
-    systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
-    sleep 5
-else
-    echo "[1/4] Docker 配置文件不存在，跳过修复..."
-fi
+# if [ -f "$DOCKER_CONFIG" ]; then
+#     echo "[1/4] 检测到 Docker 配置文件，备份并修复..."
+#     cp "$DOCKER_CONFIG" "$BACKUP_FILE"
+#     echo "{\"log-driver\": \"json-file\", \"log-opts\": {\"max-size\": \"10m\"}}" > "$DOCKER_CONFIG"
+#     systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+#     sleep 5
+# else
+#     echo "[1/4] Docker 配置文件不存在，跳过修复..."
+# fi
 
 echo "[2/4] 手动拉取 Python 基础镜像..."
 docker pull python:3.12-slim
@@ -52,16 +52,16 @@ echo "[4/4] 启动服务..."
 docker-compose up -d
 
 # 恢复 Docker 配置
-if [ -f "$BACKUP_FILE" ]; then
-    echo ""
-    echo "是否恢复原来的 Docker 配置? [y/N]"
-    read -r response
-    if [ "$response" = "y" ] || [ "$response" = "Y" ]; then
-        echo "恢复 Docker 配置..."
-        cp "$BACKUP_FILE" "$DOCKER_CONFIG"
-        systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
-    fi
-fi
+# if [ -f "$BACKUP_FILE" ]; then
+#     echo ""
+#     echo "是否恢复原来的 Docker 配置? [y/N]"
+#     read -r response
+#     if [ "$response" = "y" ] || [ "$response" = "Y" ]; then
+#         echo "恢复 Docker 配置..."
+#         cp "$BACKUP_FILE" "$DOCKER_CONFIG"
+#         systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+#     fi
+# fi
 
 echo ""
 echo "=========================================="
