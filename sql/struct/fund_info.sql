@@ -25,10 +25,4 @@ CREATE TABLE `fund_info`  (
   UNIQUE INDEX `idx_fund_code`(`fund_code` ASC) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '基金信息表' ROW_FORMAT = DYNAMIC;
 
--- ----------------------------
--- Records of fund_info
--- ----------------------------
-INSERT INTO `fund_info` VALUES (1, '011613', '华夏科创50连接C', '指数型', 0.8060, '2025-05-12', '', NULL, 0.00, '1', '', NULL, '', NULL, NULL);
-INSERT INTO `fund_info` VALUES (2, '020292', '华夏科创100ETF联结C', '指数型', 2.1209, '2026-05-12', '', NULL, 0.00, '1', '', NULL, '', NULL, NULL);
-
 SET FOREIGN_KEY_CHECKS = 1;

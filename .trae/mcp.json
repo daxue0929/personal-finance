@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "MySQL": {
-      "command": "C:\\Users\\xuedi.wang\\.conda\\envs\\dev\\Scripts\\uvx.exe",
+      "command": "/opt/anaconda3/bin/uvx",
       "args": [
         "--from",
         "mysql-mcp-server",

@@ -26,13 +26,5 @@ CREATE TABLE `fund_buyer`  (
   INDEX `idx_fund_code`(`fund_code` ASC) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 14 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '基金买入流水表' ROW_FORMAT = DYNAMIC;
 
--- ----------------------------
--- Records of fund_buyer
--- ----------------------------
-INSERT INTO `fund_buyer` VALUES (1, '020292', '华夏科创100ETF联结C', '2026-05-13', 100.0000, '1', '涨跌幅系数策略', '1', 'daxue', '2026-05-13 10:51:13', 'daxue', '2026-05-13 02:51:13', '涨跌幅=0.00%, 系数=1.0000', 'SUCCESS');
-INSERT INTO `fund_buyer` VALUES (9, '020292', '华夏科创100ETF联结C', '2026-05-15', 100.0000, '1', '涨跌幅系数策略', '1', 'daxue', '2026-05-15 13:25:42', 'daxue', '2026-05-15 14:34:22', '涨跌幅=-2.16%, 系数=1.0000', 'SUCCESS');
-INSERT INTO `fund_buyer` VALUES (11, '020292', '华夏科创100ETF联结C', '2026-05-18', 100.0000, '1', '涨跌幅系数策略', '1', 'daxue', '2026-05-18 15:01:12', 'daxue', '2026-05-18 14:59:12', '涨跌幅=-0.71%, 系数=1.0000', 'SUCCESS');
-INSERT INTO `fund_buyer` VALUES (12, '020292', '华夏科创100ETF联结C', '2026-05-19', 100.0000, '1', '涨跌幅系数策略', '1', 'daxue', '2026-05-19 11:56:05', 'daxue', '2026-05-19 11:56:05', '涨跌幅=-0.51%, 系数=1.0000', 'SUCCESS');
-INSERT INTO `fund_buyer` VALUES (13, '020292', '华夏科创100ETF联结C', '2026-05-20', 90.0000, '1', '涨跌幅系数策略', '1', 'daxue', '2026-05-20 14:29:13', 'daxue', '2026-05-20 14:29:13', '涨跌幅=3.42%, 系数=0.9000', 'PENDING');
 
 SET FOREIGN_KEY_CHECKS = 1;

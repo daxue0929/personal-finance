@@ -25,3 +25,20 @@ hs_err_pid*
 # Trae IDE configuration
 .trae/
 .trae/mcp.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+pip-log.txt
+.pip-cache/
+*.egg-info/
+build/
+dist/
+
+# Project specific
+data-crawler/.env
