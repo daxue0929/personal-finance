@@ -1,9 +1,9 @@
 import time
 import threading
-from datetime import datetime
 from typing import Callable, Optional
 
 from ..utils.logger import logger
+from ..utils.datetime_utils import get_beijing_now
 
 
 class FundTaskScheduler:
@@ -53,13 +53,13 @@ class FundTaskScheduler:
                 time.sleep(1)
 
     def _execute_task(self):
-        start_time = datetime.now()
+        start_time = get_beijing_now()
         logger.info(f"[{start_time}] 开始执行定时任务...")
 
         try:
             if self.task_func:
                 self.task_func()
-            end_time = datetime.now()
+            end_time = get_beijing_now()
             duration = (end_time - start_time).total_seconds()
             logger.info(f"任务执行完成，耗时 {duration:.2f} 秒")
         except Exception as e:

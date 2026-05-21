@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy import create_engine, Column, BigInteger, String, Date, DateTime, DECIMAL, CHAR
@@ -7,6 +7,7 @@ from sqlalchemy.pool import QueuePool
 
 from ..utils.config import get_db_url
 from ..utils.logger import logger
+from ..utils.datetime_utils import get_beijing_now
 
 Base = declarative_base()
 
@@ -90,7 +91,7 @@ class FundStorage:
 
             fund.net_asset_value = net_asset_value
             fund.net_value_date = datetime.strptime(net_value_date, '%Y-%m-%d').date()
-            fund.update_time = datetime.now()
+            fund.update_time = get_beijing_now()
             fund.update_by = 'crawler'
 
             self.session.commit()

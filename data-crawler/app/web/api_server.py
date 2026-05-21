@@ -5,9 +5,9 @@ import time
 from ..utils.logger import logger
 from ..scheduler.cron_scheduler import TaskSchedule
 from ..utils.config import get_db_url
+from ..utils.datetime_utils import get_beijing_now
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
 
 app = Flask(__name__)
 scheduler_instance = None
@@ -155,9 +155,9 @@ def create_task():
             enabled=data.get('enabled', 1),
             description=data.get('description'),
             create_by='api',
-            create_time=datetime.now(),
+            create_time=get_beijing_now(),
             update_by='api',
-            update_time=datetime.now()
+            update_time=get_beijing_now()
         )
         session.add(new_task)
         session.commit()
@@ -196,7 +196,7 @@ def update_task(task_id):
         if 'description' in data:
             task.description = data['description']
         task.update_by = 'api'
-        task.update_time = datetime.now()
+        task.update_time = get_beijing_now()
 
         session.commit()
         session.close()
@@ -225,7 +225,7 @@ def delete_task(task_id):
 
         task.del_flag = '0'
         task.update_by = 'api'
-        task.update_time = datetime.now()
+        task.update_time = get_beijing_now()
         session.commit()
         session.close()
 

@@ -1,9 +1,9 @@
 import requests
 import json
-from datetime import datetime
 from typing import Optional, Dict, Any
 
 from ..utils.logger import logger
+from ..utils.datetime_utils import get_beijing_timestamp, timestamp_ms_to_date_str
 
 
 class FundParser:
@@ -16,7 +16,7 @@ class FundParser:
         })
 
     def fetch_fund_data(self, fund_code: str) -> Optional[Dict[str, Any]]:
-        url = f"{self.BASE_URL}/{fund_code}.js?v={datetime.now().timestamp()}"
+        url = f"{self.BASE_URL}/{fund_code}.js?v={get_beijing_timestamp()}"
 
         try:
             response = self.session.get(url, timeout=10)
@@ -86,7 +86,7 @@ class FundParser:
                 latest = nav_list[-1]
                 return {
                     'net_asset_value': str(latest.get('y', 0)),
-                    'net_value_date': datetime.fromtimestamp(latest.get('x', 0) / 1000).strftime('%Y-%m-%d')
+                    'net_value_date': timestamp_ms_to_date_str(latest.get('x', 0))
                 }
         except (json.JSONDecodeError, ValueError, IndexError) as e:
             logger.warning(f"解析净值数据失败: {e}")
