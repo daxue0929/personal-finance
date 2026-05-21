@@ -7,6 +7,9 @@ ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
+# 备份一个镜像加速的源
+# https://pypi.tuna.tsinghua.edu.cn/simple
+
 COPY . .
 
 EXPOSE 5000

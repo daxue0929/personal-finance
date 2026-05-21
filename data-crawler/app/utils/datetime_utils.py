@@ -6,6 +6,8 @@
 
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
+
 
 
 # 北京时间时区
@@ -19,7 +21,8 @@ def get_beijing_now() -> datetime:
     Returns:
         datetime: 当前北京时间，包含时区信息
     """
-    return datetime.now(tz=BEIJING_TZ)
+    return datetime.now(
+        ZoneInfo('Asia/Shanghai'))
 
 
 def get_beijing_date() -> datetime:
