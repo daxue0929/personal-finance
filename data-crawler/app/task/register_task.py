@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+任务注册模块
+"""
+
+from ..utils.logger import logger
+
+
+def register_all_tasks(scheduler):
+    """
+    注册所有任务到调度器
+
+    Args:
+        scheduler: CronTaskScheduler 实例
+    """
+    from .update_fund_net_values_task import update_fund_net_values_task
+    from .fetch_kc100_index_task import fetch_kc100_index_task
+
+    logger.info("开始注册任务...")
+
+    scheduler.register_task('update_fund_net_values_task', update_fund_net_values_task)
+    logger.info("任务 [基金净值更新任务] 已注册")
+
+    scheduler.register_task('fetch_kc100_index_task', fetch_kc100_index_task)
+    logger.info("任务 [科创100指数抓取任务] 已注册")
+
+    logger.info("所有任务注册完成")

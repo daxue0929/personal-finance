@@ -294,15 +294,15 @@ def create_app():
     return app
 
 
-def start_server(host='0.0.0.0', port=5000):
+def start_server(host='0.0.0.0', port=5000, debug=False):
     """启动 Web 服务器"""
-    logger.info(f"Web 服务启动，监听 {host}:{port}")
-    app.run(host=host, port=port, threaded=True)
+    logger.info(f"Web 服务启动，监听 {host}:{port}, debug: {debug}")
+    app.run(host=host, port=port, threaded=True, debug=debug, use_reloader=False)
 
 
-def start_server_in_background(host='0.0.0.0', port=5000):
+def start_server_in_background(host='0.0.0.0', port=5000, debug=False):
     """在后台线程启动 Web 服务器"""
-    thread = threading.Thread(target=start_server, args=(host, port), daemon=True)
+    thread = threading.Thread(target=start_server, args=(host, port, debug), daemon=True)
     thread.start()
-    logger.info(f"Web 服务已在后台启动，监听 {host}:{port}")
+    logger.info(f"Web 服务已在后台启动，监听 {host}:{port}, debug: {debug}")
     return thread

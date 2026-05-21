@@ -131,6 +131,27 @@ class FundStorage:
 
         return {'success': success_count, 'failed': fail_count}
 
+    def update_fund_remark(self, fund_code: str, remark: str) -> bool:
+        """更新基金的 remark 字段"""
+        try:
+            fund = self.get_fund_by_code(fund_code)
+            if not fund:
+                logger.warning(f"基金 {fund_code} 不存在，跳过更新")
+                return False
+
+            fund.remark = remark
+            fund.update_time = get_beijing_now()
+            fund.update_by = 'crawler'
+
+            self.session.commit()
+            logger.info(f"基金 {fund_code} remark 已更新: {remark}")
+            return True
+
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"更新基金 {fund_code} remark 失败: {e}")
+            return False
+
     def close(self):
         if self.session:
             self.session.close()

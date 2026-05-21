@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Flask (data-crawler)",
+            "type": "python",
+            "request": "launch",
+            "module": "app.main",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/data-crawler",
+            "args": ["--port", "5000", "--debug"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/data-crawler"
+            }
+        }
+    ]
+}
