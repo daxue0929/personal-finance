@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import create_engine, Column, BigInteger, String, Date, DateTime, DECIMAL, CHAR
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import QueuePool
+from sqlalchemy import event
 
 from ..utils.config import get_db_url
 from ..utils.logger import logger
@@ -51,9 +52,16 @@ class FundStorage:
                 pool_size=5,
                 max_overflow=10,
                 pool_recycle=3600,
-                echo=False,
-                connect_args={'init_command': "SET time_zone = '+08:00'"}
+                echo=False
             )
+            
+            @event.listens_for(cls._engine, 'connect')
+            def set_timezone_on_connect(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("SET time_zone = '+08:00'")
+                cursor.execute("SET NAMES utf8mb4")
+                cursor.close()
+                
         return cls._engine
 
     @classmethod
