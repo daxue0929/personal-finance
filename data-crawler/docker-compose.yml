@@ -4,6 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: fund-crawler
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     ports:
       - "5000:5000"
     environment:
