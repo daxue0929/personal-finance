@@ -43,8 +43,8 @@ BEGIN
     -- 4. 直接使用输入的涨跌幅（已经是DECIMAL类型）
     SET v_change = p_change_percent;
 
-    -- 3. 根据涨跌幅区间确定买入系数（单位：倍）
-    CASE 
+    -- 5. 根据涨跌幅区间确定买入系数（单位：倍）
+    CASE
         -- 下跌区间（负数方向）
         WHEN v_change <= -25 THEN
             SET v_coefficient = 3.00;   -- 300% 买入
@@ -91,10 +91,10 @@ BEGIN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '涨幅超过20%，暂停买入';
     END CASE;
 
-    -- 4. 计算买入金额（基础金额固定 100 元）
+    -- 6. 计算买入金额（基础金额固定 100 元）
     SET v_amt = 100 * v_coefficient;
 
-    -- 5. 插入或更新 fund_buyer 表（当天重复执行时更新记录）
+    -- 7. 插入或更新 fund_buyer 表（当天重复执行时更新记录）
     INSERT INTO `fund_buyer` (
         `fund_code`,
         `fund_name`,
@@ -129,6 +129,11 @@ BEGIN
         `update_time` = VALUES(`update_time`),
         `remark` = VALUES(`remark`),
         `buy_status` = VALUES(`buy_status`);
+
+    -- 8. 输出买入结果
+    SELECT
+        CURDATE() AS '买入日期',
+        v_amt AS '买入金额';
 
 END$$
 

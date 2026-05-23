@@ -9,11 +9,12 @@ import datetime
 from ..parser import Kc100IndexParser
 from ..storage import FundStorage
 from ..utils.logger import logger
+from ..utils.datetime_utils import get_beijing_now
 
 
 def _is_trading_time() -> bool:
     """检查当前是否在交易时间内（周一至周五 9:30-14:55）"""
-    now = datetime.datetime.now()
+    now = get_beijing_now()
     
     # 检查是否是工作日（周一到周五）
     if now.weekday() >= 5:
