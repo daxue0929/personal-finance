@@ -1,16 +1,21 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+基金信息数据存储层
+"""
+
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy import create_engine, Column, BigInteger, String, Date, DateTime, DECIMAL, CHAR
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from sqlalchemy import event
 
 from ..utils.config import get_db_url
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
-
-Base = declarative_base()
+from .base import Base
 
 
 class FundInfo(Base):
@@ -33,7 +38,7 @@ class FundInfo(Base):
     remark = Column(String(500))
 
 
-class FundStorage:
+class FundInfoStorage:
     _engine = None
     _session_factory = None
 
@@ -54,14 +59,14 @@ class FundStorage:
                 pool_recycle=3600,
                 echo=False
             )
-            
+
             @event.listens_for(cls._engine, 'connect')
             def set_timezone_on_connect(dbapi_connection, connection_record):
                 cursor = dbapi_connection.cursor()
                 cursor.execute("SET time_zone = '+08:00'")
                 cursor.execute("SET NAMES utf8mb4")
                 cursor.close()
-                
+
         return cls._engine
 
     @classmethod
@@ -141,7 +146,6 @@ class FundStorage:
         return {'success': success_count, 'failed': fail_count}
 
     def update_fund_remark(self, fund_code: str, remark: str) -> bool:
-        """更新基金的 remark 字段"""
         try:
             fund = self.get_fund_by_code(fund_code)
             if not fund:

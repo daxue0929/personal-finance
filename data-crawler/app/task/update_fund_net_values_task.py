@@ -5,7 +5,7 @@
 """
 
 from ..parser import FundParser
-from ..storage import FundStorage
+from ..storage import FundInfoStorage
 from ..utils.logger import logger
 
 
@@ -14,7 +14,7 @@ def update_fund_net_values_task():
     logger.info("开始执行基金净值更新任务")
 
     parser = FundParser()
-    storage = FundStorage()
+    storage = FundInfoStorage()
 
     try:
         fund_codes = storage.get_all_fund_codes()

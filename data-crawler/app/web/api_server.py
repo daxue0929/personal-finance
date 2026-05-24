@@ -3,16 +3,12 @@ import threading
 import time
 
 from ..utils.logger import logger
-from ..scheduler.cron_scheduler import TaskSchedule
-from ..utils.config import get_db_url
+from ..storage import TaskScheduleStorage
 from ..utils.datetime_utils import get_beijing_now
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 app = Flask(__name__)
 scheduler_instance = None
-engine = create_engine(get_db_url(), pool_size=5, max_overflow=10)
-Session = sessionmaker(bind=engine)
+_task_storage = TaskScheduleStorage()
 
 
 def set_scheduler(scheduler):
@@ -74,8 +70,7 @@ def get_status():
 def get_tasks():
     """获取所有任务配置"""
     try:
-        session = Session()
-        tasks = session.query(TaskSchedule).filter(TaskSchedule.del_flag == '1').all()
+        tasks = _task_storage.get_all_tasks()
         result = []
         for task in tasks:
             job_status = scheduler_instance.get_job_status(task.task_func) if scheduler_instance else None
@@ -90,7 +85,6 @@ def get_tasks():
                 'create_time': str(task.create_time),
                 'update_time': str(task.update_time)
             })
-        session.close()
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"获取任务配置失败: {e}")
@@ -101,11 +95,7 @@ def get_tasks():
 def get_task(task_id):
     """获取单个任务配置"""
     try:
-        session = Session()
-        task = session.query(TaskSchedule).filter(
-            TaskSchedule.id == task_id,
-            TaskSchedule.del_flag == '1'
-        ).first()
+        task = _task_storage.get_task_by_id(task_id)
         if task:
             job_status = scheduler_instance.get_job_status(task.task_func) if scheduler_instance else None
             result = {
@@ -119,10 +109,8 @@ def get_task(task_id):
                 'create_time': str(task.create_time),
                 'update_time': str(task.update_time)
             }
-            session.close()
             return jsonify(result), 200
         else:
-            session.close()
             return jsonify({'error': '任务不存在'}), 404
     except Exception as e:
         logger.error(f"获取任务失败: {e}")
@@ -139,35 +127,26 @@ def create_task():
             if field not in data:
                 return jsonify({'error': f'缺少必填字段: {field}'}), 400
 
-        session = Session()
-        existing_task = session.query(TaskSchedule).filter(
-            TaskSchedule.task_func == data['task_func'],
-            TaskSchedule.del_flag == '1'
-        ).first()
-        if existing_task:
-            session.close()
+        if _task_storage.task_exists(data['task_func']):
             return jsonify({'error': '任务函数已存在'}), 409
 
-        new_task = TaskSchedule(
+        new_task = _task_storage.create_task(
             task_name=data['task_name'],
             task_func=data['task_func'],
             cron_expression=data['cron_expression'],
             enabled=data.get('enabled', 1),
             description=data.get('description'),
-            create_by='api',
-            create_time=get_beijing_now(),
-            update_by='api',
-            update_time=get_beijing_now()
+            create_by='api'
         )
-        session.add(new_task)
-        session.commit()
-        session.close()
 
-        return jsonify({
-            'success': True,
-            'message': '任务创建成功',
-            'task_id': new_task.id
-        }), 201
+        if new_task:
+            return jsonify({
+                'success': True,
+                'message': '任务创建成功',
+                'task_id': new_task.id
+            }), 201
+        else:
+            return jsonify({'error': '任务创建失败'}), 500
     except Exception as e:
         logger.error(f"创建任务失败: {e}")
         return jsonify({'error': str(e)}), 500
@@ -178,33 +157,27 @@ def update_task(task_id):
     """更新任务配置"""
     try:
         data = request.json
-        session = Session()
-        task = session.query(TaskSchedule).filter(
-            TaskSchedule.id == task_id,
-            TaskSchedule.del_flag == '1'
-        ).first()
-        if not task:
-            session.close()
+        if not _task_storage.get_task_by_id(task_id):
             return jsonify({'error': '任务不存在'}), 404
 
+        update_fields = {}
         if 'task_name' in data:
-            task.task_name = data['task_name']
+            update_fields['task_name'] = data['task_name']
         if 'cron_expression' in data:
-            task.cron_expression = data['cron_expression']
+            update_fields['cron_expression'] = data['cron_expression']
         if 'enabled' in data:
-            task.enabled = 1 if data['enabled'] else 0
+            update_fields['enabled'] = 1 if data['enabled'] else 0
         if 'description' in data:
-            task.description = data['description']
-        task.update_by = 'api'
-        task.update_time = get_beijing_now()
+            update_fields['description'] = data['description']
+        update_fields['update_by'] = 'api'
 
-        session.commit()
-        session.close()
-
-        return jsonify({
-            'success': True,
-            'message': '任务更新成功'
-        }), 200
+        if _task_storage.update_task(task_id, **update_fields):
+            return jsonify({
+                'success': True,
+                'message': '任务更新成功'
+            }), 200
+        else:
+            return jsonify({'error': '任务更新失败'}), 500
     except Exception as e:
         logger.error(f"更新任务失败: {e}")
         return jsonify({'error': str(e)}), 500
@@ -214,25 +187,16 @@ def update_task(task_id):
 def delete_task(task_id):
     """删除任务配置"""
     try:
-        session = Session()
-        task = session.query(TaskSchedule).filter(
-            TaskSchedule.id == task_id,
-            TaskSchedule.del_flag == '1'
-        ).first()
-        if not task:
-            session.close()
+        if not _task_storage.get_task_by_id(task_id):
             return jsonify({'error': '任务不存在'}), 404
 
-        task.del_flag = '0'
-        task.update_by = 'api'
-        task.update_time = get_beijing_now()
-        session.commit()
-        session.close()
-
-        return jsonify({
-            'success': True,
-            'message': '任务删除成功'
-        }), 200
+        if _task_storage.delete_task(task_id, update_by='api'):
+            return jsonify({
+                'success': True,
+                'message': '任务删除成功'
+            }), 200
+        else:
+            return jsonify({'error': '任务删除失败'}), 500
     except Exception as e:
         logger.error(f"删除任务失败: {e}")
         return jsonify({'error': str(e)}), 500

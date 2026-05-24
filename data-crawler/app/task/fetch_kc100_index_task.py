@@ -7,7 +7,7 @@
 import datetime
 
 from ..parser import Kc100IndexParser
-from ..storage import FundStorage
+from ..storage import FundInfoStorage
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
 
@@ -38,7 +38,7 @@ def fetch_kc100_index_task():
         return
 
     parser = Kc100IndexParser()
-    storage = FundStorage()
+    storage = FundInfoStorage()
 
     try:
         index_data = parser.fetch()

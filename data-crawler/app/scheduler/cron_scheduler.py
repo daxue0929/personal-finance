@@ -1,32 +1,11 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import create_engine, Column, BigInteger, String, Integer, DateTime, CHAR, Text
-from sqlalchemy.orm import sessionmaker, declarative_base
-from datetime import datetime
 import threading
 import time
 import hashlib
 
-from ..utils.config import get_db_url
+from ..storage import TaskScheduleStorage
 from ..utils.logger import logger
-
-Base = declarative_base()
-
-
-class TaskSchedule(Base):
-    __tablename__ = 'task_schedule'
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    task_name = Column(String(100), nullable=False)
-    task_func = Column(String(200), nullable=False, unique=True)
-    cron_expression = Column(String(100), nullable=False)
-    enabled = Column(Integer, default=1)
-    description = Column(Text)
-    del_flag = Column(CHAR(1), default='1')
-    create_by = Column(String(64))
-    create_time = Column(DateTime)
-    update_by = Column(String(64))
-    update_time = Column(DateTime)
 
 
 class CronTaskScheduler:
@@ -37,8 +16,7 @@ class CronTaskScheduler:
         self.check_interval = 10
         self._running = False
         self._check_thread = None
-        self.engine = create_engine(get_db_url(), pool_size=5, max_overflow=10)
-        self.Session = sessionmaker(bind=self.engine)
+        self._task_storage = TaskScheduleStorage()
         self._config_hash = ""
 
     def _calculate_config_hash(self, tasks):
@@ -52,12 +30,8 @@ class CronTaskScheduler:
         self.task_registry[task_func_name] = task_func
 
     def load_tasks_from_db(self):
-        session = self.Session()
         try:
-            tasks = session.query(TaskSchedule).filter(
-                TaskSchedule.del_flag == '1',
-                TaskSchedule.enabled == 1
-            ).all()
+            tasks = self._task_storage.get_all_enabled_tasks()
 
             current_hash = self._calculate_config_hash(tasks)
             if current_hash != self._config_hash:
@@ -69,8 +43,6 @@ class CronTaskScheduler:
         except Exception as e:
             logger.error(f"从数据库加载任务失败: {e}")
             return 0
-        finally:
-            session.close()
 
     def _update_task(self, task):
         existing_job = self.scheduler.get_job(task.task_func)
@@ -105,24 +77,20 @@ class CronTaskScheduler:
         if self._check_thread:
             self._check_thread.join(timeout=5)
         self.scheduler.shutdown()
+        self._task_storage.close()
         logger.info("Cron 任务调度器已停止")
 
     def _start_check_thread(self):
         def check_loop():
             while self._running:
                 try:
-                    session = self.Session()
-                    tasks = session.query(TaskSchedule).filter(
-                        TaskSchedule.del_flag == '1',
-                        TaskSchedule.enabled == 1
-                    ).all()
+                    tasks = self._task_storage.get_all_enabled_tasks()
 
                     current_hash = self._calculate_config_hash(tasks)
                     if current_hash != self._config_hash:
                         logger.info("检测到任务配置更新（数据库内容已变化），重新加载...")
                         self.load_tasks_from_db()
 
-                    session.close()
                 except Exception as e:
                     logger.error(f"检查任务配置更新失败: {e}")
 
