@@ -1,8 +1,6 @@
 services:
   fund-crawler:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: fund-crawler:latest
     container_name: fund-crawler
     volumes:
       - /etc/localtime:/etc/localtime:ro
