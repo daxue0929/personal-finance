@@ -16,6 +16,7 @@ def register_all_tasks(scheduler):
     """
     from .update_fund_net_values_task import update_fund_net_values_task
     from .fetch_kc100_index_task import fetch_kc100_index_task
+    from .fetch_kc50_index_task import fetch_kc50_index_task
 
     logger.info("开始注册任务...")
 
@@ -24,5 +25,8 @@ def register_all_tasks(scheduler):
 
     scheduler.register_task('fetch_kc100_index_task', fetch_kc100_index_task)
     logger.info("任务 [科创100指数抓取任务] 已注册")
+
+    scheduler.register_task('fetch_kc50_index_task', fetch_kc50_index_task)
+    logger.info("任务 [科创50指数抓取任务] 已注册")
 
     logger.info("所有任务注册完成")
