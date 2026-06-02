@@ -13,6 +13,7 @@ from .datetime_utils import (
     format_datetime,
     BEIJING_TZ
 )
+from .excel_utils import ExcelUtils
 
 __all__ = [
     'DB_CONFIG', 
@@ -28,5 +29,6 @@ __all__ = [
     'timestamp_ms_to_date_str',
     'is_after_trading_hours',
     'format_datetime',
-    'BEIJING_TZ'
+    'BEIJING_TZ',
+    'ExcelUtils'
 ]

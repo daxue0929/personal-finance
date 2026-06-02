@@ -22,6 +22,7 @@ class KcIndexData:
     change_percent: float
     volume: float
     amount: float
+    turnover_rate: float
     pe_ratio: float
     pb_ratio: float
     update_time: str
@@ -75,7 +76,7 @@ class KcIndexParser:
             match = content.split('=')[1].strip('"')
             parts = match.split('~')
             
-            if len(parts) >= 40:
+            if len(parts) >= 50:
                 from ..utils.datetime_utils import get_beijing_now_str
                 
                 return KcIndexData(
@@ -86,10 +87,11 @@ class KcIndexParser:
                     high_price=float(parts[33]),
                     low_price=float(parts[34]),
                     change_percent=float(parts[32]),
-                    volume=float(parts[6]),
-                    amount=float(parts[37]) * 10000,
-                    pe_ratio=float(parts[38]) if parts[38] else 0.0,
-                    pb_ratio=float(parts[39]) if parts[39] else 0.0,
+                    volume=float(parts[6]) / 10000,
+                    amount=float(parts[37]) / 10000,
+                    turnover_rate=float(parts[38]) if (len(parts) > 38 and parts[38]) else 0.0,
+                    pe_ratio=float(parts[39]) if (len(parts) > 39 and parts[39]) else 0.0,
+                    pb_ratio=float(parts[46]) if (len(parts) > 46 and parts[46]) else 0.0,
                     update_time=get_beijing_now_str('%Y-%m-%d %H:%M:%S')
                 )
         except (ValueError, IndexError):

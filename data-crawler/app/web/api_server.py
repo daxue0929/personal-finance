@@ -26,12 +26,14 @@ def trigger_crawl():
 def run_task(task_func):
     """立即执行指定任务"""
     try:
+        force_run = request.json.get('force_run', False) if request.json else False
+
         if scheduler_instance:
-            success = scheduler_instance.run_job_now(task_func)
+            success = scheduler_instance.run_job_now(task_func, force_run=force_run)
             if success:
                 return jsonify({
                     'success': True,
-                    'message': f'任务 {task_func} 已触发'
+                    'message': f'任务 {task_func} 已触发' + (' (force_run)' if force_run else '')
                 }), 200
             else:
                 return jsonify({

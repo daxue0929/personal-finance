@@ -99,10 +99,10 @@ class CronTaskScheduler:
         self._check_thread = threading.Thread(target=check_loop, daemon=True)
         self._check_thread.start()
 
-    def run_job_now(self, task_func_name):
+    def run_job_now(self, task_func_name, force_run: bool = False):
         if task_func_name in self.task_registry:
-            logger.info(f"立即执行任务: {task_func_name}")
-            self.task_registry[task_func_name]()
+            logger.info(f"立即执行任务: {task_func_name}, force_run={force_run}")
+            self.task_registry[task_func_name](force_run=force_run)
             return True
         return False
 

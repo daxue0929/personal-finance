@@ -237,7 +237,7 @@
 
 ### 9. 立即执行任务
 
-**POST /api/task/run/{task\_func}**
+**POST /api/task/run/{task_func}**
 
 根据任务函数名立即执行任务
 
@@ -245,15 +245,49 @@
 
 | 参数         | 类型     | 说明    |
 | ---------- | ------ | ----- |
-| task\_func | string | 任务函数名 |
+| task_func | string | 任务函数名 |
+
+**请求体**（可选）:
+
+| 字段         | 类型      | 说明                          |
+| ---------- | ------- | --------------------------- |
+| force_run  | boolean | 是否强制执行（跳过交易时间检查），默认 false |
+
+**请求示例**:
+
+```json
+{
+  "force_run": true
+}
+```
 
 **响应示例**:
 
 ```json
 {
   "success": true,
-  "message": "任务 update_fund_net_values_task 已触发"
+  "message": "任务 fetch_kc100_index_task 已触发 (force_run)"
 }
+```
+
+**说明**:
+
+- 默认情况下，指数抓取任务仅在交易时间（周一至周五 9:00-15:05）内执行
+- 设置 `force_run: true` 可跳过交易时间检查，强制执行任务
+- 适用任务：`fetch_kc50_index_task`、`fetch_kc100_index_task`
+
+**调用示例**:
+
+```bash
+# 普通执行（受交易时间限制）
+curl -X POST http://localhost:5001/api/task/run/fetch_kc50_index_task \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# 强制执行（跳过交易时间检查）
+curl -X POST http://localhost:5001/api/task/run/fetch_kc100_index_task \
+  -H "Content-Type: application/json" \
+  -d '{"force_run": true}'
 ```
 
 ***

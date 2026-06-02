@@ -28,11 +28,11 @@ def _is_trading_time() -> bool:
     return start_time <= current_time <= end_time
 
 
-def fetch_kc50_index_task():
+def fetch_kc50_index_task(force_run: bool = False):
     logger.info("=" * 50)
     logger.info("开始执行科创50指数数据抓取任务")
 
-    if not _is_trading_time():
+    if not force_run and not _is_trading_time():
         logger.info("当前不在交易时间内（周一至周五 9:00-15:05），跳过执行")
         return
 
