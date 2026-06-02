@@ -8,24 +8,22 @@
 
 import datetime
 
-from ..parser import Kc50IndexParser
+from ..parser import KcIndexParser
 from ..storage import IndexInfoStorage
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
 
 
 def _is_trading_time() -> bool:
-    """检查当前是否在交易时间内（周一至周五 9:00-15:01）"""
+    """检查当前是否在交易时间内（周一至周五 9:00-15:05）"""
     now = get_beijing_now()
 
-    # 检查是否是工作日（周一到周五）
     if now.weekday() >= 5:
         return False
 
-    # 检查时间是否在9:00-15:01之间
     current_time = now.time()
     start_time = datetime.time(9, 0)
-    end_time = datetime.time(15, 1)
+    end_time = datetime.time(15, 5)
 
     return start_time <= current_time <= end_time
 
@@ -34,12 +32,11 @@ def fetch_kc50_index_task():
     logger.info("=" * 50)
     logger.info("开始执行科创50指数数据抓取任务")
 
-    # 检查是否在交易时间内
     if not _is_trading_time():
-        logger.info("当前不在交易时间内（周一至周五 9:00-15:01），跳过执行")
+        logger.info("当前不在交易时间内（周一至周五 9:00-15:05），跳过执行")
         return
 
-    parser = Kc50IndexParser()
+    parser = KcIndexParser('000688')
     storage = IndexInfoStorage()
 
     try:
@@ -60,14 +57,11 @@ def fetch_kc50_index_task():
         logger.info(f"  成交量: {index_data.volume}")
         logger.info(f"  成交额: {index_data.amount}")
         logger.info(f"  PE(TTM): {index_data.pe_ratio}")
-        logger.info(f"  PE分位: {index_data.pe_percentile}%")
         logger.info(f"  PB: {index_data.pb_ratio}")
         logger.info(f"  更新时间: {index_data.update_time}")
 
-        # 获取今天日期
         today = get_beijing_now().date()
 
-        # 准备数据
         index_info_data = {
             'index_code': index_data.index_code,
             'index_name': index_data.index_name,
@@ -81,11 +75,10 @@ def fetch_kc50_index_task():
             'volume': index_data.volume,
             'amount': index_data.amount,
             'pe_ratio': index_data.pe_ratio,
-            'pe_percentile': index_data.pe_percentile,
+            'pe_percentile': 0.0,
             'pb_ratio': index_data.pb_ratio
         }
 
-        # 创建或更新数据（当天持续更新）
         success = storage.create_or_update_index_info(index_info_data)
         if success:
             logger.info(f"  成功更新 index_info 表 (日期: {today})")

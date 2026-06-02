@@ -1,9 +1,7 @@
 from .fund_parser import FundParser
-from .kc100_index_parser import Kc100IndexParser, Kc100IndexData
-from .kc50_index_parser import Kc50IndexParser, Kc50IndexData
+from .kc_index_parser import KcIndexParser, KcIndexData
 
 __all__ = [
     'FundParser',
-    'Kc100IndexParser', 'Kc100IndexData',
-    'Kc50IndexParser', 'Kc50IndexData',
+    'KcIndexParser', 'KcIndexData',
 ]
