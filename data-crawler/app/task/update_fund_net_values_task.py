@@ -9,7 +9,13 @@ from ..storage import FundInfoStorage
 from ..utils.logger import logger
 
 
-def update_fund_net_values_task():
+def update_fund_net_values_task(force_run: bool = False):
+    """
+    基金净值更新任务
+    
+    Args:
+        force_run: 强制运行参数（该任务不需要时间检查，直接执行）
+    """
     logger.info("=" * 50)
     logger.info("开始执行基金净值更新任务")
 

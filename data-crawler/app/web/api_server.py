@@ -3,12 +3,13 @@ import threading
 import datetime
 
 from ..utils.logger import logger
-from ..storage import TaskScheduleStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage
 from ..utils.datetime_utils import get_beijing_now
 
 app = Flask(__name__)
 scheduler_instance = None
 _task_storage = TaskScheduleStorage()
+_fund_storage = FundInfoStorage()
 
 
 def set_scheduler(scheduler):
@@ -254,6 +255,202 @@ def stop_scheduler():
 def health_check():
     """健康检查"""
     return jsonify({'status': 'ok', 'service': 'fund-crawler'}), 200
+
+
+# ==================== 基金管理API ====================
+
+@app.route('/api/funds', methods=['GET'])
+def get_funds():
+    """获取所有基金信息"""
+    try:
+        from ..storage.fund_info_storage import FundInfo
+        funds = _fund_storage.session.query(FundInfo).filter(
+            FundInfo.del_flag == '1'
+        ).all()
+        
+        result = []
+        for fund in funds:
+            result.append({
+                'fund_id': fund.fund_id,
+                'fund_code': fund.fund_code,
+                'fund_name': fund.fund_name,
+                'fund_type': fund.fund_type,
+                'net_asset_value': float(fund.net_asset_value) if fund.net_asset_value else 0.0,
+                'net_value_date': str(fund.net_value_date) if fund.net_value_date else None,
+                'fund_manager': fund.fund_manager,
+                'establish_date': str(fund.establish_date) if fund.establish_date else None,
+                'fund_size': float(fund.fund_size) if fund.fund_size else 0.0,
+                'remark': fund.remark,
+                'create_time': str(fund.create_time) if fund.create_time else None,
+                'update_time': str(fund.update_time) if fund.update_time else None
+            })
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"获取基金列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/funds/<int:fund_id>', methods=['GET'])
+def get_fund(fund_id):
+    """获取单个基金信息"""
+    try:
+        from ..storage.fund_info_storage import FundInfo
+        fund = _fund_storage.session.query(FundInfo).filter(
+            FundInfo.fund_id == fund_id,
+            FundInfo.del_flag == '1'
+        ).first()
+        
+        if fund:
+            result = {
+                'fund_id': fund.fund_id,
+                'fund_code': fund.fund_code,
+                'fund_name': fund.fund_name,
+                'fund_type': fund.fund_type,
+                'net_asset_value': float(fund.net_asset_value) if fund.net_asset_value else 0.0,
+                'net_value_date': str(fund.net_value_date) if fund.net_value_date else None,
+                'fund_manager': fund.fund_manager,
+                'establish_date': str(fund.establish_date) if fund.establish_date else None,
+                'fund_size': float(fund.fund_size) if fund.fund_size else 0.0,
+                'remark': fund.remark,
+                'create_time': str(fund.create_time) if fund.create_time else None,
+                'update_time': str(fund.update_time) if fund.update_time else None
+            }
+            return jsonify(result), 200
+        else:
+            return jsonify({'error': '基金不存在'}), 404
+    except Exception as e:
+        logger.error(f"获取基金失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/funds', methods=['POST'])
+def create_fund():
+    """创建基金信息"""
+    try:
+        from ..storage.fund_info_storage import FundInfo
+        data = request.json
+        required_fields = ['fund_code', 'fund_name']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'缺少必填字段: {field}'}), 400
+        
+        # 检查基金代码是否已存在
+        existing = _fund_storage.session.query(FundInfo).filter(
+            FundInfo.fund_code == data['fund_code'],
+            FundInfo.del_flag == '1'
+        ).first()
+        
+        if existing:
+            return jsonify({'error': '基金代码已存在'}), 409
+        
+        new_fund = FundInfo(
+            fund_code=data['fund_code'],
+            fund_name=data['fund_name'],
+            fund_type=data.get('fund_type', '混合型'),
+            net_asset_value=data.get('net_asset_value', 0.0),
+            net_value_date=datetime.strptime(data.get('net_value_date'), '%Y-%m-%d').date() if data.get('net_value_date') else None,
+            fund_manager=data.get('fund_manager', ''),
+            establish_date=datetime.strptime(data.get('establish_date'), '%Y-%m-%d').date() if data.get('establish_date') else None,
+            fund_size=data.get('fund_size', 0.0),
+            remark=data.get('remark', ''),
+            del_flag='1',
+            create_by='api',
+            create_time=get_beijing_now(),
+            update_by='api',
+            update_time=get_beijing_now()
+        )
+        
+        _fund_storage.session.add(new_fund)
+        _fund_storage.session.commit()
+        _fund_storage.session.refresh(new_fund)
+        
+        return jsonify({
+            'success': True,
+            'message': '基金创建成功',
+            'fund_id': new_fund.fund_id
+        }), 201
+    except Exception as e:
+        _fund_storage.session.rollback()
+        logger.error(f"创建基金失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/funds/<int:fund_id>', methods=['PUT'])
+def update_fund(fund_id):
+    """更新基金信息"""
+    try:
+        from ..storage.fund_info_storage import FundInfo
+        data = request.json
+        
+        fund = _fund_storage.session.query(FundInfo).filter(
+            FundInfo.fund_id == fund_id,
+            FundInfo.del_flag == '1'
+        ).first()
+        
+        if not fund:
+            return jsonify({'error': '基金不存在'}), 404
+        
+        # 更新字段
+        if 'fund_name' in data:
+            fund.fund_name = data['fund_name']
+        if 'fund_type' in data:
+            fund.fund_type = data['fund_type']
+        if 'net_asset_value' in data:
+            fund.net_asset_value = data['net_asset_value']
+        if 'net_value_date' in data:
+            fund.net_value_date = datetime.strptime(data['net_value_date'], '%Y-%m-%d').date()
+        if 'fund_manager' in data:
+            fund.fund_manager = data['fund_manager']
+        if 'establish_date' in data:
+            fund.establish_date = datetime.strptime(data['establish_date'], '%Y-%m-%d').date()
+        if 'fund_size' in data:
+            fund.fund_size = data['fund_size']
+        if 'remark' in data:
+            fund.remark = data['remark']
+        
+        fund.update_by = 'api'
+        fund.update_time = get_beijing_now()
+        
+        _fund_storage.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '基金更新成功'
+        }), 200
+    except Exception as e:
+        _fund_storage.session.rollback()
+        logger.error(f"更新基金失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/funds/<int:fund_id>', methods=['DELETE'])
+def delete_fund(fund_id):
+    """删除基金信息"""
+    try:
+        from ..storage.fund_info_storage import FundInfo
+        
+        fund = _fund_storage.session.query(FundInfo).filter(
+            FundInfo.fund_id == fund_id,
+            FundInfo.del_flag == '1'
+        ).first()
+        
+        if not fund:
+            return jsonify({'error': '基金不存在'}), 404
+        
+        fund.del_flag = '0'
+        fund.update_by = 'api'
+        fund.update_time = get_beijing_now()
+        
+        _fund_storage.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '基金删除成功'
+        }), 200
+    except Exception as e:
+        _fund_storage.session.rollback()
+        logger.error(f"删除基金失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 def create_app():
