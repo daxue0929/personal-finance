@@ -1,11 +1,9 @@
 #!/bin/bash
 
 # ========================================
-# 前端部署脚本
-# 用于构建和部署前端应用到服务器
+# 前端部署脚本 - Nginx 配置更新
+# 用于配置 Nginx 并部署前端应用
 # ========================================
-
-set -e  # 遇到错误立即退出
 
 # 颜色定义
 RED='\033[0;31m'
@@ -14,8 +12,6 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # 配置变量
-DEPLOY_DIR="/opt/personal-finance/frontend"
-BUILD_DIR="./dist"
 NGINX_CONF_DIR="/etc/nginx/conf.d"
 NGINX_CONF_FILE="personal-finance-frontend.conf"
 
@@ -39,48 +35,6 @@ check_root() {
         print_info "提示：使用 sudo ./deploy.sh"
         exit 1
     fi
-}
-
-# 检查构建目录是否存在
-check_build() {
-    print_info "检查构建目录..."
-    if [ ! -d "$BUILD_DIR" ]; then
-        print_error "构建目录 $BUILD_DIR 不存在"
-        echo ""
-        print_info "========================================"
-        print_info "  请先在本地执行以下步骤："
-        print_info "========================================"
-        echo ""
-        print_info "1. 在本地项目目录执行构建命令："
-        echo "   cd frontend"
-        echo "   npm run build"
-        echo ""
-        print_info "2. 将构建好的 dist 目录上传到服务器"
-        echo ""
-        print_info "3. 确保 dist 目录在正确位置后，再次执行部署脚本"
-        echo ""
-        exit 1
-    fi
-    print_info "构建目录检查通过"
-}
-
-# 创建部署目录
-create_deploy_dir() {
-    print_info "创建部署目录..."
-    if [ ! -d "$DEPLOY_DIR" ]; then
-        mkdir -p "$DEPLOY_DIR/dist"
-        print_info "目录 $DEPLOY_DIR/dist 已创建"
-    else
-        print_info "目录 $DEPLOY_DIR/dist 已存在"
-    fi
-}
-
-# 复制构建文件
-copy_files() {
-    print_info "复制构建文件到部署目录..."
-    # 直接复制新的构建文件到部署目录
-    cp -r "$BUILD_DIR"/* "$DEPLOY_DIR/dist/"
-    print_info "文件复制完成"
 }
 
 # 创建 Nginx 配置文件
@@ -155,7 +109,7 @@ show_complete() {
     echo ""
     print_info "访问地址：http://$(hostname -I | awk '{print $1}'):83"
     echo ""
-    print_info "部署目录：$DEPLOY_DIR"
+    print_info "前端目录：/opt/personal-finance/frontend/dist"
     print_info "Nginx 配置：$NGINX_CONF_DIR/$NGINX_CONF_FILE"
     echo ""
 }
@@ -164,14 +118,11 @@ show_complete() {
 main() {
     echo ""
     print_info "========================================"
-    print_info "  开始部署前端应用"
+    print_info "  开始配置前端 Nginx"
     print_info "========================================"
     echo ""
     
     check_root
-    check_build
-    create_deploy_dir
-    copy_files
     create_nginx_config
     test_nginx_config
     reload_nginx
