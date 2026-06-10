@@ -38,7 +38,6 @@ pip-log.txt
 .pip-cache/
 *.egg-info/
 build/
-dist/
 
 # Frontend (Node.js/Vue)
 node_modules/
