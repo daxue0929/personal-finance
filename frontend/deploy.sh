@@ -62,6 +62,7 @@ check_build() {
         exit 1
     fi
     print_info "构建目录检查通过"
+}
 
 # 创建部署目录
 create_deploy_dir() {
