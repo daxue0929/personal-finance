@@ -43,12 +43,25 @@ check_root() {
 
 # 检查构建目录是否存在
 check_build() {
+    print_info "检查构建目录..."
     if [ ! -d "$BUILD_DIR" ]; then
         print_error "构建目录 $BUILD_DIR 不存在"
-        print_info "请先运行 npm run build 构建项目"
+        echo ""
+        print_info "========================================"
+        print_info "  请先在本地执行以下步骤："
+        print_info "========================================"
+        echo ""
+        print_info "1. 在本地项目目录执行构建命令："
+        echo "   cd frontend"
+        echo "   npm run build"
+        echo ""
+        print_info "2. 将构建好的 dist 目录上传到服务器"
+        echo ""
+        print_info "3. 确保 dist 目录在正确位置后，再次执行部署脚本"
+        echo ""
         exit 1
     fi
-}
+    print_info "构建目录检查通过"
 
 # 创建部署目录
 create_deploy_dir() {
@@ -64,7 +77,12 @@ create_deploy_dir() {
 # 复制构建文件
 copy_files() {
     print_info "复制构建文件到部署目录..."
-    rm -rf "$DEPLOY_DIR/dist"
+    # 先备份旧的 dist 目录（如果有）
+    if [ -d "$DEPLOY_DIR/dist" ]; then
+        print_info "备份旧的部署文件..."
+        mv "$DEPLOY_DIR/dist" "$DEPLOY_DIR/dist.bak.$(date +%Y%m%d_%H%M%S)"
+    fi
+    # 复制新的构建文件
     cp -r "$BUILD_DIR" "$DEPLOY_DIR/"
     print_info "文件复制完成"
 }
