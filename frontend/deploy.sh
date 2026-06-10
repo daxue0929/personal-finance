@@ -68,23 +68,18 @@ check_build() {
 create_deploy_dir() {
     print_info "创建部署目录..."
     if [ ! -d "$DEPLOY_DIR" ]; then
-        mkdir -p "$DEPLOY_DIR"
-        print_info "目录 $DEPLOY_DIR 已创建"
+        mkdir -p "$DEPLOY_DIR/dist"
+        print_info "目录 $DEPLOY_DIR/dist 已创建"
     else
-        print_info "目录 $DEPLOY_DIR 已存在"
+        print_info "目录 $DEPLOY_DIR/dist 已存在"
     fi
 }
 
 # 复制构建文件
 copy_files() {
     print_info "复制构建文件到部署目录..."
-    # 先备份旧的 dist 目录（如果有）
-    if [ -d "$DEPLOY_DIR/dist" ]; then
-        print_info "备份旧的部署文件..."
-        mv "$DEPLOY_DIR/dist" "$DEPLOY_DIR/dist.bak.$(date +%Y%m%d_%H%M%S)"
-    fi
-    # 复制新的构建文件
-    cp -r "$BUILD_DIR" "$DEPLOY_DIR/"
+    # 直接复制新的构建文件到部署目录
+    cp -r "$BUILD_DIR"/* "$DEPLOY_DIR/dist/"
     print_info "文件复制完成"
 }
 
