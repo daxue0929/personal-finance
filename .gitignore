@@ -47,8 +47,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Vite build output
-frontend/dist/
+# Vite build output (keep frontend/dist for deployment)
 frontend/.vite/
 
 # Environment files
