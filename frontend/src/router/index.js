@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/components/Layout.vue'
 import TaskManage from '@/views/TaskManage.vue'
 import FundManage from '@/views/FundManage.vue'
+import FundBuyer from '@/views/FundBuyer.vue'
 
 const routes = [
   {
@@ -20,6 +21,12 @@ const routes = [
         name: 'FundManage',
         component: FundManage,
         meta: { title: '基金信息管理' }
+      },
+      {
+        path: '/buyers',
+        name: 'FundBuyer',
+        component: FundBuyer,
+        meta: { title: '基金买入流水' }
       }
     ]
   }

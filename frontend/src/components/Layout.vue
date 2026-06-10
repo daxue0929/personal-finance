@@ -20,8 +20,10 @@
         <el-icon><Wallet /></el-icon>
         <span>基金信息管理</span>
       </el-menu-item>
-
-        <!-- 后续可扩展其他菜单项 -->
+      <el-menu-item index="/buyers">
+        <el-icon><ShoppingCart /></el-icon>
+        <span>基金买入流水</span>
+      </el-menu-item>
         <!--
         <el-menu-item index="/funds">
           <el-icon><Wallet /></el-icon>
@@ -64,7 +66,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Setting, Wallet } from '@element-plus/icons-vue'
+import { Setting, Wallet, ShoppingCart } from '@element-plus/icons-vue'
 import { taskApi } from '@/api'
 
 const router = useRouter()
