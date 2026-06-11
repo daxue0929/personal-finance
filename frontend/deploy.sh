@@ -64,7 +64,7 @@ server {
 
     location /prod-api/ {
         add_header Cache-Control no-cache;
-        proxy_pass http://127.0.0.1:5000/;
+        proxy_pass http://127.0.0.1:5000/api/;
         client_max_body_size 25M;
         client_body_buffer_size 128k;
         fastcgi_intercept_errors on;
