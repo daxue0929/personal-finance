@@ -51,9 +51,6 @@
         <div style="font-size: 16px; font-weight: 500;">
           {{ currentTitle }}
         </div>
-        <div>
-          <el-button size="small" @click="fetchStatus">刷新状态</el-button>
-        </div>
       </el-header>
 
       <el-main style="background-color: #f5f5f5; padding: 0;">
@@ -64,10 +61,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Setting, Wallet, ShoppingCart } from '@element-plus/icons-vue'
-import { taskApi } from '@/api'
 
 const router = useRouter()
 
@@ -77,15 +73,6 @@ const currentTitle = computed(() => {
   const route = router.currentRoute.value
   return route.meta?.title || '理财管理系统'
 })
-
-const fetchStatus = async () => {
-  try {
-    const status = await taskApi.getStatus()
-    console.log('调度器状态:', status)
-  } catch (error) {
-    console.error('获取状态失败:', error)
-  }
-}
 </script>
 
 <style scoped>

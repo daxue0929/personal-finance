@@ -1,9 +1,10 @@
 import flask
 from flask import Flask, jsonify, request
 import threading
-import datetime
+from datetime import datetime as dt
 import time
 import functools
+from sqlalchemy import text
 
 from ..utils.logger import logger
 from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage
@@ -511,9 +512,9 @@ def create_fund():
                 fund_name=data['fund_name'],
                 fund_type=data.get('fund_type', '混合型'),
                 net_asset_value=data.get('net_asset_value', 0.0),
-                net_value_date=datetime.strptime(data.get('net_value_date'), '%Y-%m-%d').date() if data.get('net_value_date') else None,
+                net_value_date=dt.strptime(data.get('net_value_date'), '%Y-%m-%d').date() if data.get('net_value_date') else None,
                 fund_manager=data.get('fund_manager', ''),
-                establish_date=datetime.strptime(data.get('establish_date'), '%Y-%m-%d').date() if data.get('establish_date') else None,
+                establish_date=dt.strptime(data.get('establish_date'), '%Y-%m-%d').date() if data.get('establish_date') else None,
                 fund_size=data.get('fund_size', 0.0),
                 remark=data.get('remark', ''),
                 del_flag='1',
@@ -571,11 +572,11 @@ def update_fund(fund_id):
             if 'net_asset_value' in data:
                 fund.net_asset_value = data['net_asset_value']
             if 'net_value_date' in data:
-                fund.net_value_date = datetime.strptime(data['net_value_date'], '%Y-%m-%d').date()
+                fund.net_value_date = dt.strptime(data['net_value_date'], '%Y-%m-%d').date()
             if 'fund_manager' in data:
                 fund.fund_manager = data['fund_manager']
             if 'establish_date' in data:
-                fund.establish_date = datetime.strptime(data['establish_date'], '%Y-%m-%d').date()
+                fund.establish_date = dt.strptime(data['establish_date'], '%Y-%m-%d').date()
             if 'fund_size' in data:
                 fund.fund_size = data['fund_size']
             if 'remark' in data:
@@ -811,7 +812,7 @@ def create_buyer():
             new_buyer = FundBuyer(
                 fund_code=data['fund_code'],
                 fund_name=data.get('fund_name', ''),
-                time=datetime.strptime(data['time'], '%Y-%m-%d').date(),
+                time=dt.strptime(data['time'], '%Y-%m-%d').date(),
                 amt=amt,
                 type=data.get('type', ''),
                 policy=data.get('policy', ''),
@@ -869,7 +870,7 @@ def update_buyer(buyer_id):
             if 'fund_name' in data:
                 buyer.fund_name = data['fund_name']
             if 'time' in data:
-                buyer.time = datetime.strptime(data['time'], '%Y-%m-%d').date()
+                buyer.time = dt.strptime(data['time'], '%Y-%m-%d').date()
             if 'amt' in data:
                 buyer.amt = data['amt']
             if 'type' in data:
@@ -938,6 +939,44 @@ def delete_buyer(buyer_id):
             session.close()
     except Exception as e:
         logger.error(f"删除买入记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/buyers/quick-buy', methods=['POST'])
+@log_request
+def quick_buy():
+    """快捷买入 - 调用存储过程"""
+    try:
+        data = request.get_json()
+        fund_code = data.get('fund_code', '020292')
+        change_pct = data.get('change_pct')
+        
+        if not change_pct:
+            return jsonify({'error': '涨跌幅不能为空'}), 400
+        
+        # 创建新的session
+        session = _buyer_storage.Session()
+        
+        try:
+            # 调用存储过程
+            result = session.execute(
+                text("CALL sp_insert_fund_buyer_by_change(:fund_code, :change_pct)"),
+                {'fund_code': fund_code, 'change_pct': change_pct}
+            )
+            session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': f'快捷买入成功，基金代码: {fund_code}，涨跌幅: {change_pct}%'
+            }), 200
+        except Exception as e:
+            session.rollback()
+            logger.error(f"快捷买入失败: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error(f"快捷买入失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -11,8 +11,7 @@
             <el-input v-model="searchForm.fund_name" placeholder="请输入基金名称" clearable />
           </el-form-item>
           <el-form-item label="基金类型">
-            <el-select v-model="searchForm.fund_type" placeholder="请选择类型" clearable>
-              <el-option label="全部" value="" />
+            <el-select v-model="searchForm.fund_type" placeholder="请选择类型" clearable style="width: 120px;">
               <el-option label="股票型" value="股票型" />
               <el-option label="指数型" value="指数型" />
               <el-option label="债券型" value="债券型" />

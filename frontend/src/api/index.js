@@ -100,5 +100,8 @@ export const buyerApi = {
   updateBuyer: (id, data) => api.put(`/buyers/${id}`, data),
 
   // 删除买入记录
-  deleteBuyer: (id) => api.delete(`/buyers/${id}`)
+  deleteBuyer: (id) => api.delete(`/buyers/${id}`),
+
+  // 快捷买入
+  quickBuy: (data) => api.post('/buyers/quick-buy', data)
 }

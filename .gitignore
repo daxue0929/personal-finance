@@ -24,6 +24,7 @@ hs_err_pid*
 
 # Trae IDE configuration
 .trae/
+!.trae/skills/
 .trae/mcp.json
 
 # Python

@@ -11,8 +11,7 @@
             <el-input v-model="searchForm.task_func" placeholder="请输入任务函数" clearable />
           </el-form-item>
           <el-form-item label="状态">
-            <el-select v-model="searchForm.enabled" placeholder="请选择状态" clearable>
-              <el-option label="全部" value="" />
+            <el-select v-model="searchForm.enabled" placeholder="请选择状态" clearable style="width: 120px;">
               <el-option label="启用" :value="true" />
               <el-option label="禁用" :value="false" />
             </el-select>

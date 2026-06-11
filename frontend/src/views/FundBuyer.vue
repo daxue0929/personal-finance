@@ -11,24 +11,22 @@
             <el-input v-model="searchForm.fund_name" placeholder="请输入基金名称" clearable />
           </el-form-item>
           <el-form-item label="买入类型">
-            <el-select v-model="searchForm.type" placeholder="请选择类型" clearable>
-              <el-option label="全部" value="" />
+            <el-select v-model="searchForm.type" placeholder="请选择类型" clearable style="width: 120px;">
               <el-option label="手工买入" value="1" />
               <el-option label="定投买入" value="2" />
             </el-select>
           </el-form-item>
           <el-form-item label="执行状态">
-            <el-select v-model="searchForm.buy_status" placeholder="请选择状态" clearable>
-              <el-option label="全部" value="" />
+            <el-select v-model="searchForm.buy_status" placeholder="请选择状态" clearable style="width: 120px;">
               <el-option label="未执行" value="PENDING" />
               <el-option label="已成功" value="SUCCESS" />
               <el-option label="执行失败" value="FAILED" />
             </el-select>
           </el-form-item>
           <el-form-item label="买入日期范围">
-            <el-date-picker v-model="searchForm.start_time" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" />
+            <el-date-picker v-model="searchForm.start_time" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" style="width: 140px;" />
             <span style="margin: 0 10px;">-</span>
-            <el-date-picker v-model="searchForm.end_time" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" />
+            <el-date-picker v-model="searchForm.end_time" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 140px;" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="handleSearch">搜索</el-button>
@@ -40,6 +38,7 @@
       <!-- 功能区域 -->
       <div style="padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: flex-start; gap: 10px;">
         <el-button type="primary" @click="showAddDialog">新增买入记录</el-button>
+        <el-button type="success" @click="showQuickBuyDialog">快捷买入</el-button>
         <el-button @click="exportData">导出数据</el-button>
       </div>
 
@@ -101,17 +100,19 @@
       width="600px"
     >
       <el-form :model="formData" label-width="120px">
-        <el-form-item label="基金代码" required>
-          <el-input v-model="formData.fund_code" placeholder="请输入基金代码" />
+        <el-form-item label="选择基金" required>
+          <el-select v-model="formData.fund_code" placeholder="请搜索选择基金" filterable remote :remote-method="(query) => searchFunds(query)" @change="handleFundSelectChange" style="width: 100%;">
+            <el-option v-for="fund in fundOptions" :key="fund.id" :label="`${fund.fund_code} - ${fund.fund_name}`" :value="fund.fund_code" />
+          </el-select>
         </el-form-item>
         <el-form-item label="基金名称">
-          <el-input v-model="formData.fund_name" placeholder="请输入基金名称" />
+          <el-input v-model="formData.fund_name" placeholder="自动填充" disabled />
         </el-form-item>
         <el-form-item label="买入日期" required>
           <el-date-picker v-model="formData.time" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item label="买入金额" required>
-          <el-input-number v-model="formData.amt" :precision="4" :min="0" style="width: 100%" />
+          <el-input v-model="formData.amt" placeholder="请输入买入金额" />
         </el-form-item>
         <el-form-item label="买入类型">
           <el-select v-model="formData.type" placeholder="请选择买入类型">
@@ -138,19 +139,53 @@
         <el-button type="primary" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 快捷买入弹出框 -->
+    <el-dialog
+      v-model="quickBuyVisible"
+      title="快捷买入"
+      width="500px"
+    >
+      <el-form :model="quickBuyForm" label-width="100px">
+        <el-form-item label="选择基金">
+          <el-select v-model="quickBuyForm.fund_code" placeholder="请选择基金" style="width: 100%;">
+            <el-option label="020292 - 华夏科创100ETF联结C" value="020292" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="涨跌幅(%)" required>
+          <el-input v-model="quickBuyForm.change_pct" placeholder="请输入涨跌幅，如 0.5" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="quickBuyVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitQuickBuy">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { buyerApi } from '@/api'
+import { buyerApi, fundApi } from '@/api'
 
 const buyers = ref([])
+const funds = ref([])
+const fundOptions = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
+
+// 快捷买入相关
+const quickBuyVisible = ref(false)
+const quickBuyForm = ref({
+  fund_code: '020292',
+  change_pct: ''
+})
+
+// 获取今天的日期字符串
+const getToday = () => new Date().toISOString().split('T')[0]
 
 // 分页相关
 const currentPage = ref(1)
@@ -292,15 +327,44 @@ const exportData = () => {
   ElMessage.info('导出功能开发中...')
 }
 
+// 显示快捷买入对话框
+const showQuickBuyDialog = () => {
+  quickBuyForm.value = {
+    fund_code: '020292',
+    change_pct: ''
+  }
+  quickBuyVisible.value = true
+}
+
+// 提交快捷买入
+const submitQuickBuy = async () => {
+  if (!quickBuyForm.value.change_pct) {
+    ElMessage.warning('请输入涨跌幅')
+    return
+  }
+  
+  try {
+    await buyerApi.quickBuy({
+      fund_code: quickBuyForm.value.fund_code,
+      change_pct: quickBuyForm.value.change_pct
+    })
+    ElMessage.success('快捷买入成功')
+    quickBuyVisible.value = false
+    fetchBuyers()
+  } catch (error) {
+    ElMessage.error('快捷买入失败: ' + (error.response?.data?.error || error.message))
+  }
+}
+
 // 显示新增对话框
 const showAddDialog = () => {
   isEdit.value = false
   formData.value = {
     fund_code: '',
     fund_name: '',
-    time: '',
+    time: getToday(),
     amt: 0.0,
-    type: '',
+    type: '1',
     policy: '',
     buy_status: 'PENDING',
     remark: ''
@@ -372,7 +436,42 @@ onMounted(() => {
     sortOrder.value = savedSortOrder
   }
   fetchBuyers()
+  fetchFunds()
 })
+
+// 获取基金列表
+const fetchFunds = async () => {
+  try {
+    const result = await fundApi.getFunds({ page: 1, page_size: 1000 })
+    funds.value = result.data || []
+    fundOptions.value = funds.value.slice(0, 20)
+  } catch (error) {
+    console.error('获取基金列表失败:', error)
+  }
+}
+
+// 选择基金时自动填入基金代码和名称
+const handleFundSelectChange = (fundCode) => {
+  const fund = funds.value.find(f => f.fund_code === fundCode)
+  if (fund) {
+    formData.value.fund_name = fund.fund_name
+  } else {
+    formData.value.fund_name = ''
+  }
+}
+
+// 搜索基金
+const searchFunds = async (query) => {
+  if (!query) {
+    fundOptions.value = funds.value.slice(0, 20)
+    return
+  }
+  const filtered = funds.value.filter(f =>
+    f.fund_code.toLowerCase().includes(query.toLowerCase()) ||
+    f.fund_name.includes(query)
+  )
+  fundOptions.value = filtered.slice(0, 20)
+}
 </script>
 
 <style scoped>
