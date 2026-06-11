@@ -367,7 +367,7 @@ def stop_scheduler():
 @log_request
 def health_check():
     """健康检查"""
-    return jsonify({'status': 'ok', 'service': 'fund-crawler'}), 200
+    return jsonify({'status': 'ok2', 'service': 'fund-crawler'}), 200
 
 
 # ==================== 基金管理API ====================
