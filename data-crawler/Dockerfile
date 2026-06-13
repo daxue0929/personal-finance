@@ -5,10 +5,11 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 备份一个镜像加速的源
-# https://pypi.tuna.tsinghua.edu.cn/simple
+# https://pypi.tuna.tsinghua.edu.cn/simple/
+# https://mirrors.aliyun.com/pypi/simple/
 
 COPY . .
 
