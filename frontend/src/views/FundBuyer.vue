@@ -36,10 +36,40 @@
       </div>
 
       <!-- 功能区域 -->
-      <div style="padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: flex-start; gap: 10px;">
-        <el-button type="primary" @click="showAddDialog">新增买入记录</el-button>
-        <el-button type="success" @click="showQuickBuyDialog">快捷买入</el-button>
-        <el-button @click="exportData">导出数据</el-button>
+      <div style="padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; gap: 10px;">
+          <el-button type="primary" @click="showAddDialog">新增买入记录</el-button>
+          <el-button type="success" @click="showQuickBuyDialog">快捷买入</el-button>
+        </div>
+        <el-popover
+          v-model:visible="popoverVisible"
+          trigger="click"
+          placement="bottom-end"
+          :width="220"
+          popper-style="padding: 4px;"
+        >
+          <template #reference>
+            <span style="cursor: pointer; display: inline-flex; align-items: center;">
+              <el-tooltip content="更多功能" placement="top">
+                <el-icon :size="20" style="color: #409EFF;">
+                  <MoreFilled />
+                </el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <div class="feature-panel" @mouseenter="handlePopoverMouseEnter" @mouseleave="handlePopoverMouseLeave">
+            <div class="feature-panel-body">
+              <div class="feature-item" @click="exportData">
+                <el-icon><Download /></el-icon>
+                <div class="feature-item-info">
+                  <div class="feature-item-title">导出数据</div>
+                  <div class="feature-item-desc">将当前数据导出为文件</div>
+                </div>
+              </div>
+              <!-- 预留更多功能入口 -->
+            </div>
+          </div>
+        </el-popover>
       </div>
 
       <!-- 数据表格 -->
@@ -167,6 +197,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { MoreFilled, Download } from '@element-plus/icons-vue'
 import { buyerApi, fundApi } from '@/api'
 
 const buyers = ref([])
@@ -183,6 +214,23 @@ const quickBuyForm = ref({
   fund_code: '020292',
   change_pct: ''
 })
+
+// 功能面板相关
+const popoverVisible = ref(false)
+let popoverHideTimer = null
+
+const handlePopoverMouseEnter = () => {
+  if (popoverHideTimer) {
+    clearTimeout(popoverHideTimer)
+    popoverHideTimer = null
+  }
+}
+
+const handlePopoverMouseLeave = () => {
+  popoverHideTimer = setTimeout(() => {
+    popoverVisible.value = false
+  }, 2000)
+}
 
 // 获取今天的日期字符串
 const getToday = () => new Date().toISOString().split('T')[0]
@@ -325,6 +373,13 @@ const resetSearch = () => {
 // 导出数据
 const exportData = () => {
   ElMessage.info('导出功能开发中...')
+}
+
+// 处理菜单命令
+const handleMenuCommand = (command) => {
+  if (command === 'export') {
+    exportData()
+  }
 }
 
 // 显示快捷买入对话框
@@ -475,4 +530,51 @@ const searchFunds = async (query) => {
 </script>
 
 <style scoped>
+.feature-panel {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.feature-panel-body {
+  padding: 8px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.feature-item:hover {
+  background-color: #f5f7fa;
+}
+
+.feature-item .el-icon {
+  font-size: 16px;
+  color: #409EFF;
+  flex-shrink: 0;
+}
+
+.feature-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-item-title {
+  font-size: 13px;
+  color: #303133;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.feature-item-desc {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 1px;
+  line-height: 1.3;
+}
 </style>
