@@ -24,6 +24,10 @@
         <el-icon><ShoppingCart /></el-icon>
         <span>基金买入流水</span>
       </el-menu-item>
+      <el-menu-item index="/funds/history">
+        <el-icon><TrendCharts /></el-icon>
+        <span>基金历史净值</span>
+      </el-menu-item>
         <!--
         <el-menu-item index="/funds">
           <el-icon><Wallet /></el-icon>
@@ -63,11 +67,14 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Setting, Wallet, ShoppingCart } from '@element-plus/icons-vue'
+import { Setting, Wallet, ShoppingCart, TrendCharts } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
-const activeMenu = computed(() => router.currentRoute.value.path)
+const activeMenu = computed(() => {
+  const path = router.currentRoute.value.path
+  return path
+})
 
 const currentTitle = computed(() => {
   const route = router.currentRoute.value

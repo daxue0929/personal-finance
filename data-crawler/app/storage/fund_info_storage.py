@@ -43,8 +43,11 @@ class FundInfoStorage:
     _session_factory = None
 
     def __init__(self):
-        self.engine = self._get_engine()
-        self.Session = self._get_session_factory()
+        if FundInfoStorage._engine is None:
+            FundInfoStorage._engine = self._get_engine()
+        if FundInfoStorage._session_factory is None:
+            FundInfoStorage._session_factory = sessionmaker(bind=FundInfoStorage._engine)
+        self.Session = FundInfoStorage._session_factory
         self.session = self.Session()
 
     @classmethod
@@ -70,11 +73,9 @@ class FundInfoStorage:
 
         return cls._engine
 
-    @classmethod
-    def _get_session_factory(cls):
-        if cls._session_factory is None:
-            cls._session_factory = sessionmaker(bind=cls._get_engine())
-        return cls._session_factory
+    def get_session(self):
+        """获取数据库会话"""
+        return FundInfoStorage._session_factory()
 
     def get_all_fund_codes(self) -> List[str]:
         try:
@@ -145,6 +146,55 @@ class FundInfoStorage:
                 fail_count += 1
 
         return {'success': success_count, 'failed': fail_count}
+
+    def get_funds_with_pagination(self, fund_code=None, fund_name=None, fund_type=None, page=1, page_size=10):
+        """
+        获取基金信息列表（支持搜索和分页）
+        :param fund_code: 基金代码（模糊搜索）
+        :param fund_name: 基金名称（模糊搜索）
+        :param fund_type: 基金类型
+        :param page: 页码
+        :param page_size: 每页条数
+        :return: (数据列表, 总数)
+        """
+        session = self.get_session()
+        try:
+            query = session.query(FundInfo).filter(FundInfo.del_flag == '1')
+            
+            # 添加搜索条件
+            if fund_code:
+                query = query.filter(FundInfo.fund_code.like(f'%{fund_code}%'))
+            if fund_name:
+                query = query.filter(FundInfo.fund_name.like(f'%{fund_name}%'))
+            if fund_type:
+                query = query.filter(FundInfo.fund_type == fund_type)
+            
+            # 获取总数
+            total = query.count()
+            
+            # 分页查询
+            funds = query.offset((page - 1) * page_size).limit(page_size).all()
+            
+            result = []
+            for fund in funds:
+                result.append({
+                    'fund_id': fund.fund_id,
+                    'fund_code': fund.fund_code,
+                    'fund_name': fund.fund_name,
+                    'fund_type': fund.fund_type,
+                    'net_asset_value': float(fund.net_asset_value) if fund.net_asset_value else 0.0,
+                    'net_value_date': str(fund.net_value_date) if fund.net_value_date else None,
+                    'fund_manager': fund.fund_manager,
+                    'establish_date': str(fund.establish_date) if fund.establish_date else None,
+                    'fund_size': float(fund.fund_size) if fund.fund_size else 0.0,
+                    'remark': fund.remark,
+                    'create_time': str(fund.create_time) if fund.create_time else None,
+                    'update_time': str(fund.update_time) if fund.update_time else None
+                })
+            
+            return result, total
+        finally:
+            session.close()
 
     def update_fund_remark(self, fund_code: str, remark: str) -> bool:
         try:

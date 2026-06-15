@@ -56,9 +56,10 @@
             </template>
           </el-table-column>
           <el-table-column prop="remark" label="备注" />
-          <el-table-column label="操作" width="200" fixed="right">
+          <el-table-column label="操作" width="240" fixed="right">
             <template #default="{ row }">
               <el-button size="small" @click="showEditDialog(row)">编辑</el-button>
+              <el-button size="small" type="info" @click="viewHistory(row)">历史</el-button>
               <el-button size="small" type="danger" @click="deleteFund(row)">删除</el-button>
             </template>
           </el-table-column>
@@ -130,8 +131,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fundApi } from '@/api'
+
+const router = useRouter()
 
 const funds = ref([])
 const loading = ref(false)
@@ -274,6 +278,11 @@ const submitForm = async () => {
   } catch (error) {
     ElMessage.error(isEdit.value ? '更新失败' : '创建失败')
   }
+}
+
+// 查看历史净值
+const viewHistory = (row) => {
+  router.push({ path: '/funds/history', query: { fund_code: row.fund_code } })
 }
 
 // 删除基金

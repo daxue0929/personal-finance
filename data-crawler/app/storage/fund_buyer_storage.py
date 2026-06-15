@@ -42,8 +42,11 @@ class FundBuyerStorage:
     _session_factory = None
 
     def __init__(self):
-        self.engine = self._get_engine()
-        self.Session = self._get_session_factory()
+        if FundBuyerStorage._engine is None:
+            FundBuyerStorage._engine = self._get_engine()
+        if FundBuyerStorage._session_factory is None:
+            FundBuyerStorage._session_factory = sessionmaker(bind=FundBuyerStorage._engine)
+        self.Session = FundBuyerStorage._session_factory
         self.session = self.Session()
 
     @classmethod
@@ -69,11 +72,9 @@ class FundBuyerStorage:
 
         return cls._engine
 
-    @classmethod
-    def _get_session_factory(cls):
-        if cls._session_factory is None:
-            cls._session_factory = sessionmaker(bind=cls._get_engine())
-        return cls._session_factory
+    def get_session(self):
+        """获取数据库会话"""
+        return FundBuyerStorage._session_factory()
 
     def get_all_buyers(self) -> List[FundBuyer]:
         """获取所有买入记录"""
@@ -179,6 +180,89 @@ class FundBuyerStorage:
             self.session.rollback()
             logger.error(f"删除买入记录失败: {e}")
             return False
+
+    def get_buyers_with_pagination(self, fund_code=None, fund_name=None, buy_type=None, 
+                                   buy_status=None, start_time=None, end_time=None,
+                                   sort_field=None, sort_order=None, page=1, page_size=10):
+        """
+        获取买入记录列表（支持搜索、排序和分页）
+        :param fund_code: 基金代码（模糊搜索）
+        :param fund_name: 基金名称（模糊搜索）
+        :param buy_type: 买入类型
+        :param buy_status: 买入状态
+        :param start_time: 开始时间
+        :param end_time: 结束时间
+        :param sort_field: 排序字段
+        :param sort_order: 排序方向（asc/desc）
+        :param page: 页码
+        :param page_size: 每页条数
+        :return: (数据列表, 总数)
+        """
+        session = self.get_session()
+        try:
+            query = session.query(FundBuyer).filter(FundBuyer.del_flag == '1')
+            
+            # 添加搜索条件
+            if fund_code:
+                query = query.filter(FundBuyer.fund_code.like(f'%{fund_code}%'))
+            if fund_name:
+                query = query.filter(FundBuyer.fund_name.like(f'%{fund_name}%'))
+            if buy_type:
+                query = query.filter(FundBuyer.type == buy_type)
+            if buy_status:
+                query = query.filter(FundBuyer.buy_status == buy_status)
+            if start_time:
+                query = query.filter(FundBuyer.time >= start_time)
+            if end_time:
+                query = query.filter(FundBuyer.time <= end_time)
+            
+            # 添加排序
+            if sort_field and sort_order:
+                field_map = {
+                    'id': FundBuyer.id,
+                    'fund_code': FundBuyer.fund_code,
+                    'fund_name': FundBuyer.fund_name,
+                    'time': FundBuyer.time,
+                    'amt': FundBuyer.amt,
+                    'type': FundBuyer.type,
+                    'buy_status': FundBuyer.buy_status,
+                    'policy': FundBuyer.policy,
+                    'remark': FundBuyer.remark
+                }
+                if sort_field in field_map:
+                    if sort_order == 'asc':
+                        query = query.order_by(field_map[sort_field].asc())
+                    else:
+                        query = query.order_by(field_map[sort_field].desc())
+            else:
+                # 默认按时间降序排列
+                query = query.order_by(FundBuyer.time.desc())
+            
+            # 获取总数
+            total = query.count()
+            
+            # 分页查询
+            buyers = query.offset((page - 1) * page_size).limit(page_size).all()
+            
+            result = []
+            for buyer in buyers:
+                result.append({
+                    'id': buyer.id,
+                    'fund_code': buyer.fund_code,
+                    'fund_name': buyer.fund_name,
+                    'time': str(buyer.time),
+                    'amt': float(buyer.amt) if buyer.amt else 0.0,
+                    'type': buyer.type,
+                    'policy': buyer.policy,
+                    'buy_status': buyer.buy_status,
+                    'remark': buyer.remark,
+                    'create_time': str(buyer.create_time) if buyer.create_time else None,
+                    'update_time': str(buyer.update_time) if buyer.update_time else None
+                })
+            
+            return result, total
+        finally:
+            session.close()
 
     def close(self):
         if self.session:

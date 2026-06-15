@@ -105,3 +105,9 @@ export const buyerApi = {
   // 快捷买入
   quickBuy: (data) => api.post('/buyers/quick-buy', data)
 }
+
+// 基金历史净值相关API
+export const fundNavApi = {
+  // 获取基金历史净值列表（支持日期范围筛选和分页）
+  getNavHistory: (fundCode, params) => api.get('/funds/history', { params: { fund_code: fundCode, ...params } })
+}

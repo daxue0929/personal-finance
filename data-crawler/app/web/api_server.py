@@ -7,7 +7,7 @@ import functools
 from sqlalchemy import text
 
 from ..utils.logger import logger
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage
 from ..utils.datetime_utils import get_beijing_now
 
 app = Flask(__name__)
@@ -15,6 +15,7 @@ scheduler_instance = None
 _task_storage = TaskScheduleStorage()
 _fund_storage = FundInfoStorage()
 _buyer_storage = FundBuyerStorage()
+_nav_storage = FundNavHistoryStorage()
 
 
 def set_scheduler(scheduler):
@@ -378,9 +379,6 @@ def health_check():
 def get_funds():
     """获取基金信息列表（支持搜索和分页）"""
     try:
-        from ..storage.fund_info_storage import FundInfo
-        from sqlalchemy import or_
-        
         # 获取分页参数
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 10))
@@ -390,52 +388,21 @@ def get_funds():
         fund_name = request.args.get('fund_name', '')
         fund_type = request.args.get('fund_type', '')
         
-        # 创建新的session
-        session = _fund_storage.Session()
+        # 使用存储类方法获取数据（确保使用pool_pre_ping配置）
+        funds, total = _fund_storage.get_funds_with_pagination(
+            fund_code=fund_code if fund_code else None,
+            fund_name=fund_name if fund_name else None,
+            fund_type=fund_type if fund_type else None,
+            page=page,
+            page_size=page_size
+        )
         
-        try:
-            # 构建查询
-            query = session.query(FundInfo).filter(FundInfo.del_flag == '1')
-            
-            # 添加搜索条件
-            if fund_code:
-                query = query.filter(FundInfo.fund_code.like(f'%{fund_code}%'))
-            if fund_name:
-                query = query.filter(FundInfo.fund_name.like(f'%{fund_name}%'))
-            if fund_type:
-                query = query.filter(FundInfo.fund_type == fund_type)
-            
-            # 获取总数
-            total = query.count()
-            
-            # 分页查询
-            funds = query.offset((page - 1) * page_size).limit(page_size).all()
-            
-            result = []
-            for fund in funds:
-                result.append({
-                    'fund_id': fund.fund_id,
-                    'fund_code': fund.fund_code,
-                    'fund_name': fund.fund_name,
-                    'fund_type': fund.fund_type,
-                    'net_asset_value': float(fund.net_asset_value) if fund.net_asset_value else 0.0,
-                    'net_value_date': str(fund.net_value_date) if fund.net_value_date else None,
-                    'fund_manager': fund.fund_manager,
-                    'establish_date': str(fund.establish_date) if fund.establish_date else None,
-                    'fund_size': float(fund.fund_size) if fund.fund_size else 0.0,
-                    'remark': fund.remark,
-                    'create_time': str(fund.create_time) if fund.create_time else None,
-                    'update_time': str(fund.update_time) if fund.update_time else None
-                })
-            
-            return jsonify({
-                'data': result,
-                'total': total,
-                'page': page,
-                'page_size': page_size
-            }), 200
-        finally:
-            session.close()
+        return jsonify({
+            'data': funds,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }), 200
     except Exception as e:
         logger.error(f"获取基金列表失败: {e}")
         return jsonify({'error': str(e)}), 500
@@ -649,8 +616,6 @@ def delete_fund(fund_id):
 def get_buyers():
     """获取买入记录列表（支持搜索和分页）"""
     try:
-        from ..storage.fund_buyer_storage import FundBuyer
-        
         # 获取分页参数
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 10))
@@ -667,79 +632,26 @@ def get_buyers():
         sort_field = request.args.get('sort_field', '')
         sort_order = request.args.get('sort_order', '')
         
-        # 创建新的session
-        session = _buyer_storage.Session()
+        # 使用存储类方法获取数据（确保使用pool_pre_ping配置）
+        buyers, total = _buyer_storage.get_buyers_with_pagination(
+            fund_code=fund_code if fund_code else None,
+            fund_name=fund_name if fund_name else None,
+            buy_type=buy_type if buy_type else None,
+            buy_status=buy_status if buy_status else None,
+            start_time=start_time if start_time else None,
+            end_time=end_time if end_time else None,
+            sort_field=sort_field if sort_field else None,
+            sort_order=sort_order if sort_order else None,
+            page=page,
+            page_size=page_size
+        )
         
-        try:
-            # 构建查询
-            query = session.query(FundBuyer).filter(FundBuyer.del_flag == '1')
-            
-            # 添加搜索条件
-            if fund_code:
-                query = query.filter(FundBuyer.fund_code.like(f'%{fund_code}%'))
-            if fund_name:
-                query = query.filter(FundBuyer.fund_name.like(f'%{fund_name}%'))
-            if buy_type:
-                query = query.filter(FundBuyer.type == buy_type)
-            if buy_status:
-                query = query.filter(FundBuyer.buy_status == buy_status)
-            if start_time:
-                query = query.filter(FundBuyer.time >= start_time)
-            if end_time:
-                query = query.filter(FundBuyer.time <= end_time)
-            
-            # 添加排序
-            if sort_field and sort_order:
-                field_map = {
-                    'id': FundBuyer.id,
-                    'fund_code': FundBuyer.fund_code,
-                    'fund_name': FundBuyer.fund_name,
-                    'time': FundBuyer.time,
-                    'amt': FundBuyer.amt,
-                    'type': FundBuyer.type,
-                    'buy_status': FundBuyer.buy_status,
-                    'policy': FundBuyer.policy,
-                    'remark': FundBuyer.remark
-                }
-                if sort_field in field_map:
-                    if sort_order == 'asc':
-                        query = query.order_by(field_map[sort_field].asc())
-                    else:
-                        query = query.order_by(field_map[sort_field].desc())
-            else:
-                # 默认按时间降序排列
-                query = query.order_by(FundBuyer.time.desc())
-            
-            # 获取总数
-            total = query.count()
-            
-            # 分页查询
-            buyers = query.offset((page - 1) * page_size).limit(page_size).all()
-            
-            result = []
-            for buyer in buyers:
-                result.append({
-                    'id': buyer.id,
-                    'fund_code': buyer.fund_code,
-                    'fund_name': buyer.fund_name,
-                    'time': str(buyer.time),
-                    'amt': float(buyer.amt) if buyer.amt else 0.0,
-                    'type': buyer.type,
-                    'policy': buyer.policy,
-                    'buy_status': buyer.buy_status,
-                    'remark': buyer.remark,
-                    'create_time': str(buyer.create_time) if buyer.create_time else None,
-                    'update_time': str(buyer.update_time) if buyer.update_time else None
-                })
-            
-            return jsonify({
-                'data': result,
-                'total': total,
-                'page': page,
-                'page_size': page_size
-            }), 200
-        finally:
-            session.close()
+        return jsonify({
+            'data': buyers,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }), 200
     except Exception as e:
         logger.error(f"获取买入记录失败: {e}")
         return jsonify({'error': str(e)}), 500
@@ -988,6 +900,43 @@ def start_server(host='0.0.0.0', port=5000, debug=False):
     """启动 Web 服务器"""
     logger.info(f"Web 服务启动，监听 {host}:{port}, debug: {debug}")
     app.run(host=host, port=port, threaded=True, debug=debug, use_reloader=False)
+
+
+
+# ==================== 基金历史净值API ====================
+
+@app.route('/api/funds/history', methods=['GET'])
+@log_request
+def get_fund_nav_history():
+    """获取基金历史净值列表（支持日期范围筛选和分页）"""
+    fund_code = request.args.get('fund_code', '')
+    try:
+        # 获取分页参数
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+
+        # 获取日期范围参数
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+
+        # 使用存储类方法获取数据（确保使用pool_pre_ping配置）
+        history_list, total = _nav_storage.get_nav_history(
+            fund_code=fund_code if fund_code else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None,
+            page=page,
+            page_size=page_size
+        )
+
+        return jsonify({
+            'data': history_list,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }), 200
+    except Exception as e:
+        logger.error(f"获取基金历史净值失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 def start_server_in_background(host='0.0.0.0', port=5000, debug=False):

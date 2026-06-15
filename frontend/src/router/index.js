@@ -3,6 +3,7 @@ import Layout from '@/components/Layout.vue'
 import TaskManage from '@/views/TaskManage.vue'
 import FundManage from '@/views/FundManage.vue'
 import FundBuyer from '@/views/FundBuyer.vue'
+import FundNavHistory from '@/views/FundNavHistory.vue'
 
 const routes = [
   {
@@ -27,6 +28,12 @@ const routes = [
         name: 'FundBuyer',
         component: FundBuyer,
         meta: { title: '基金买入流水' }
+      },
+      {
+        path: '/funds/history',
+        name: 'FundNavHistory',
+        component: FundNavHistory,
+        meta: { title: '基金历史净值' }
       }
     ]
   }
