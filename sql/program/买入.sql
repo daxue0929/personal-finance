@@ -21,6 +21,10 @@ BEGIN
     DECLARE v_change DECIMAL(6,2);        -- 涨跌幅数值（带小数）
     DECLARE v_exists INT;                 -- 当天是否已有买入记录（0:无, 1:有）
 
+    -- 设置会话时间区为上海时间
+    SET SESSION time_zone = 'Asia/Shanghai'; 
+
+
     -- 1. 根据基金代码或基金ID查找基金信息，若不存在则报错
     SELECT fund_code, fund_name INTO v_fund_code, v_fund_name
     FROM fund_info
