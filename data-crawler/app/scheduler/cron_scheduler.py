@@ -3,6 +3,7 @@ from apscheduler.triggers.cron import CronTrigger
 import threading
 import time
 import hashlib
+from datetime import datetime
 
 from ..storage import TaskScheduleStorage
 from ..utils.logger import logger
@@ -106,13 +107,22 @@ class CronTaskScheduler:
             return True
         return False
 
+    def format_next_run_time(self, next_run_time):
+        """格式化下次执行时间"""
+        if not next_run_time:
+            return None
+        if isinstance(next_run_time, datetime):
+            return next_run_time.strftime('%Y-%m-%d %H:%M:%S')
+        return str(next_run_time)
+
     def get_job_status(self, task_func_name):
+        """获取任务状态"""
         job = self.scheduler.get_job(task_func_name)
         if job:
             return {
                 'id': job.id,
                 'name': job.name,
-                'next_run_time': str(job.next_run_time) if job.next_run_time else None,
+                'next_run_time': self.format_next_run_time(job.next_run_time),
                 'trigger': str(job.trigger)
             }
         return None
@@ -123,7 +133,7 @@ class CronTaskScheduler:
             jobs.append({
                 'id': job.id,
                 'name': job.name,
-                'next_run_time': str(job.next_run_time) if job.next_run_time else None,
+                'next_run_time': self.format_next_run_time(job.next_run_time),
                 'trigger': str(job.trigger)
             })
         return jobs

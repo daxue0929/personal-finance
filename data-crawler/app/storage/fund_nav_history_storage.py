@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL, DateTime
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, DateTime, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -206,6 +206,25 @@ class FundNavHistoryStorage:
                 session.commit()
                 return True
             return False
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def backup_nav_history(self):
+        """
+        调用存储过程备份基金净值历史数据
+        :return: 插入的记录数
+        """
+        session = self.get_session()
+        try:
+            result = session.execute(text("CALL backup_fund_nav_history()"))
+            session.commit()
+            # 获取存储过程返回的结果
+            for row in result:
+                return row[0] if row else 0
+            return 0
         except Exception as e:
             session.rollback()
             raise e
