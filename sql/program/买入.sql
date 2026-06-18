@@ -122,9 +122,9 @@ BEGIN
         '涨跌幅系数策略',               -- 策略说明，可按需调整
         '1',                           -- 正常状态
         'daxue',                       -- 创建者
-        DATE_ADD(NOW(), INTERVAL 8 HOUR),  -- 创建时间
+        NOW(),                         -- 创建时间（已设置时区为上海时间）
         'daxue',                       -- 更新者
-        DATE_ADD(NOW(), INTERVAL 8 HOUR),  -- 更新时间
+        NOW(),                          -- 更新时间（已设置时区为上海时间）
         CONCAT('涨跌幅=', v_change, '%, 系数=', v_coefficient),
         'PENDING'
     ) ON DUPLICATE KEY UPDATE
