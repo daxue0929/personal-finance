@@ -129,6 +129,7 @@ BEGIN
         'PENDING'
     ) ON DUPLICATE KEY UPDATE
         `amt` = VALUES(`amt`),
+        `del_flag` = '1',
         `update_by` = VALUES(`update_by`),
         `update_time` = VALUES(`update_time`),
         `remark` = VALUES(`remark`),

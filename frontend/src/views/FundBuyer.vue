@@ -177,9 +177,9 @@
       width="500px"
     >
       <el-form :model="quickBuyForm" label-width="100px">
-        <el-form-item label="选择基金">
-          <el-select v-model="quickBuyForm.fund_code" placeholder="请选择基金" style="width: 100%;">
-            <el-option label="020292 - 华夏科创100ETF联结C" value="020292" />
+        <el-form-item label="选择基金" required>
+          <el-select v-model="quickBuyForm.fund_code" placeholder="请搜索选择基金" filterable remote :remote-method="(query) => searchQuickBuyFunds(query)" style="width: 100%;">
+            <el-option v-for="fund in quickBuyFundOptions" :key="fund.id" :label="`${fund.fund_code} - ${fund.fund_name}`" :value="fund.fund_code" />
           </el-select>
         </el-form-item>
         <el-form-item label="涨跌幅(%)" required>
@@ -210,8 +210,9 @@ const editId = ref(null)
 
 // 快捷买入相关
 const quickBuyVisible = ref(false)
+const quickBuyFundOptions = ref([])
 const quickBuyForm = ref({
-  fund_code: '020292',
+  fund_code: '',
   change_pct: ''
 })
 
@@ -385,14 +386,19 @@ const handleMenuCommand = (command) => {
 // 显示快捷买入对话框
 const showQuickBuyDialog = () => {
   quickBuyForm.value = {
-    fund_code: '020292',
+    fund_code: '',
     change_pct: ''
   }
+  quickBuyFundOptions.value = funds.value.slice(0, 20)
   quickBuyVisible.value = true
 }
 
 // 提交快捷买入
 const submitQuickBuy = async () => {
+  if (!quickBuyForm.value.fund_code) {
+    ElMessage.warning('请选择基金')
+    return
+  }
   if (!quickBuyForm.value.change_pct) {
     ElMessage.warning('请输入涨跌幅')
     return
@@ -526,6 +532,19 @@ const searchFunds = async (query) => {
     f.fund_name.includes(query)
   )
   fundOptions.value = filtered.slice(0, 20)
+}
+
+// 搜索快捷买入基金
+const searchQuickBuyFunds = async (query) => {
+  if (!query) {
+    quickBuyFundOptions.value = funds.value.slice(0, 20)
+    return
+  }
+  const filtered = funds.value.filter(f =>
+    f.fund_code.toLowerCase().includes(query.toLowerCase()) ||
+    f.fund_name.includes(query)
+  )
+  quickBuyFundOptions.value = filtered.slice(0, 20)
 }
 </script>
 
