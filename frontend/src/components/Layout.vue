@@ -12,41 +12,16 @@
         text-color="#fff"
         active-text-color="#ffd04b"
       >
-        <el-menu-item index="/tasks">
-        <el-icon><Setting /></el-icon>
-        <span>任务配置管理</span>
-      </el-menu-item>
-      <el-menu-item index="/funds">
-        <el-icon><Wallet /></el-icon>
-        <span>基金信息管理</span>
-      </el-menu-item>
-      <el-menu-item index="/buyers">
-        <el-icon><ShoppingCart /></el-icon>
-        <span>基金买入流水</span>
-      </el-menu-item>
-      <el-menu-item index="/funds/history">
-        <el-icon><TrendCharts /></el-icon>
-        <span>基金历史净值</span>
-      </el-menu-item>
-        <!--
-        <el-menu-item index="/funds">
-          <el-icon><Wallet /></el-icon>
-          <span>基金管理</span>
+        <el-menu-item
+          v-for="menu in menuItems"
+          :key="menu.path"
+          :index="menu.path"
+        >
+          <el-icon>
+            <component :is="getIconComponent(menu.path)" />
+          </el-icon>
+          <span>{{ menu.meta.title }}</span>
         </el-menu-item>
-        -->
-
-        <!--
-        <el-sub-menu index="2">
-          <template #title>
-            <el-icon><Document /></el-icon>
-            <span>数据分析</span>
-          </template>
-          <el-menu-item index="/analysis/index">
-            <el-icon><DataLine /></el-icon>
-            <span>指数分析</span>
-          </el-menu-item>
-        </el-sub-menu>
-        -->
       </el-menu>
     </el-aside>
 
@@ -65,21 +40,41 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { Setting, Wallet, ShoppingCart, TrendCharts } from '@element-plus/icons-vue'
+import { computed, h } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { Setting, Wallet, ShoppingCart, TrendCharts, Folder } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const route = useRoute()
+
+// 获取路由列表并按sort排序
+const menuItems = computed(() => {
+  const routes = router.options.routes[0]?.children || []
+  return routes
+    .filter(r => r.path && r.meta?.title)
+    .sort((a, b) => (a.meta?.sort || 0) - (b.meta?.sort || 0))
+})
 
 const activeMenu = computed(() => {
-  const path = router.currentRoute.value.path
-  return path
+  return route.path
 })
 
 const currentTitle = computed(() => {
-  const route = router.currentRoute.value
   return route.meta?.title || '理财管理系统'
 })
+
+// 图标映射
+const iconMap = {
+  '/portfolio': Folder,
+  '/buyers': ShoppingCart,
+  '/funds': Wallet,
+  '/funds/history': TrendCharts,
+  '/tasks': Setting
+}
+
+const getIconComponent = (path) => {
+  return iconMap[path] || Folder
+}
 </script>
 
 <style scoped>

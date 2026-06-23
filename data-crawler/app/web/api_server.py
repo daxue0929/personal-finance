@@ -7,7 +7,7 @@ import functools
 from sqlalchemy import text
 
 from ..utils.logger import logger
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage
 from ..utils.datetime_utils import get_beijing_now
 
 app = Flask(__name__)
@@ -16,6 +16,9 @@ _task_storage = TaskScheduleStorage()
 _fund_storage = FundInfoStorage()
 _buyer_storage = FundBuyerStorage()
 _nav_storage = FundNavHistoryStorage()
+_portfolio_storage = PortfolioStorage()
+_position_storage = PositionStorage()
+_portfolio_position_storage = PortfolioPositionStorage()
 
 
 def set_scheduler(scheduler):
@@ -43,7 +46,7 @@ def log_request(func):
         client_ip = request.remote_addr
         user_agent = request.headers.get('User-Agent', '')[:100]
         
-        logger.info(f"【请求开始】[TraceID:{trace_id}] {method} {path} | IP: {client_ip} | 参数: {query_params} | 体: {body}")
+        logger.info(f"【请求开始】[TraceID:{trace_id}] {method} {path} | IP: {client_ip} | 请求参数: {query_params} | 请求体: {body}")
         
         try:
             response = func(*args, **kwargs)
@@ -857,30 +860,40 @@ def delete_buyer(buyer_id):
 @app.route('/api/buyers/quick-buy', methods=['POST'])
 @log_request
 def quick_buy():
-    """快捷买入 - 调用存储过程"""
+    """快捷买入 - 根据策略执行买入"""
     try:
         data = request.get_json()
         fund_code = data.get('fund_code', '020292')
         change_pct = data.get('change_pct')
-        
-        if not change_pct:
-            return jsonify({'error': '涨跌幅不能为空'}), 400
+        policy = data.get('policy', 'change_pct_strategy')
         
         # 创建新的session
         session = _buyer_storage.Session()
         
         try:
-            # 调用存储过程
-            result = session.execute(
-                text("CALL sp_insert_fund_buyer_by_change(:fund_code, :change_pct)"),
-                {'fund_code': fund_code, 'change_pct': change_pct}
-            )
-            session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': f'快捷买入成功，基金代码: {fund_code}，涨跌幅: {change_pct}%'
-            }), 200
+            if policy == 'change_pct_strategy':
+                # 涨跌幅策略 - 调用存储过程
+                if not change_pct:
+                    return jsonify({'error': '涨跌幅策略需要传入涨跌幅参数'}), 400
+                    
+                result = session.execute(
+                    text("CALL sp_insert_fund_buyer_by_change(:fund_code, :change_pct)"),
+                    {'fund_code': fund_code, 'change_pct': change_pct}
+                )
+                session.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'快捷买入成功（涨跌幅策略），基金代码: {fund_code}，涨跌幅: {change_pct}%'
+                }), 200
+            elif policy == 'fixed_strategy':
+                # 固定策略 - 固定金额买入（预留）
+                return jsonify({
+                    'success': False,
+                    'message': '固定策略尚未实现'
+                }), 501
+            else:
+                return jsonify({'error': f'未知策略: {policy}'}), 400
         except Exception as e:
             session.rollback()
             logger.error(f"快捷买入失败: {e}")
@@ -936,6 +949,313 @@ def get_fund_nav_history():
         }), 200
     except Exception as e:
         logger.error(f"获取基金历史净值失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 持仓组合接口 ====================
+
+@app.route('/api/portfolios', methods=['GET'])
+@log_request
+def get_portfolios():
+    """获取持仓组合列表（不包含持仓详情）"""
+    try:
+        name = request.args.get('name', '')
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+        
+        portfolios, total = _portfolio_storage.get_portfolios_with_pagination(
+            name=name,
+            page=page,
+            page_size=page_size
+        )
+        
+        return jsonify({
+            'data': portfolios,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        })
+    except Exception as e:
+        logger.error(f"获取持仓组合列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>/positions', methods=['GET'])
+@log_request
+def get_portfolio_positions(portfolio_id):
+    """获取指定组合的持仓列表"""
+    try:
+        # 先验证组合是否存在
+        portfolio = _portfolio_storage.get_portfolio_by_id(portfolio_id)
+        if not portfolio:
+            return jsonify({'error': '持仓组合不存在'}), 404
+        
+        # 获取持仓列表并计算统计数据
+        relations = _portfolio_position_storage.get_portfolio_positions(portfolio_id)
+        positions = []
+        total_value = 0.0
+        total_cost = 0.0
+        
+        for relation in relations:
+            position = _position_storage.get_position_by_id(relation['position_id'])
+            if position:
+                positions.append(position)
+                total_value += float(position.get('current_value', 0))
+                total_cost += float(position.get('shares', 0)) * float(position.get('cost_price', 0))
+        
+        return jsonify({
+            'data': positions,
+            'total_value': total_value,
+            'total_cost': total_cost,
+            'total_profit_loss': total_value - total_cost
+        })
+    except Exception as e:
+        logger.error(f"获取组合持仓列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>', methods=['GET'])
+@log_request
+def get_portfolio(portfolio_id):
+    """获取单个持仓组合"""
+    try:
+        portfolio = _portfolio_storage.get_portfolio_by_id(portfolio_id)
+        if not portfolio:
+            return jsonify({'error': '持仓组合不存在'}), 404
+        
+        # 获取组合下的持仓列表并计算统计数据
+        relations = _portfolio_position_storage.get_portfolio_positions(portfolio_id)
+        positions = []
+        total_value = 0.0
+        total_cost = 0.0
+        
+        for relation in relations:
+            position = _position_storage.get_position_by_id(relation['position_id'])
+            if position:
+                positions.append(position)
+                # 累加市值和成本
+                total_value += float(position.get('current_value', 0))
+                total_cost += float(position.get('shares', 0)) * float(position.get('cost_price', 0))
+        
+        portfolio['positions'] = positions
+        portfolio['total_value'] = total_value
+        portfolio['total_cost'] = total_cost
+        portfolio['total_profit_loss'] = total_value - total_cost
+        return jsonify(portfolio)
+    except Exception as e:
+        logger.error(f"获取持仓组合失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios', methods=['POST'])
+@log_request
+def create_portfolio():
+    """创建持仓组合"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+        
+        name = data.get('name')
+        if not name:
+            return jsonify({'error': '组合名称不能为空'}), 400
+        
+        portfolio_id = _portfolio_storage.create_portfolio(data)
+        
+        return jsonify({
+            'id': portfolio_id,
+            'message': '持仓组合创建成功'
+        }), 201
+    except Exception as e:
+        logger.error(f"创建持仓组合失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>', methods=['PUT'])
+@log_request
+def update_portfolio(portfolio_id):
+    """更新持仓组合"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+        
+        success = _portfolio_storage.update_portfolio(portfolio_id, data)
+        if not success:
+            return jsonify({'error': '持仓组合不存在'}), 404
+        
+        return jsonify({'message': '持仓组合更新成功'})
+    except Exception as e:
+        logger.error(f"更新持仓组合失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolios/<int:portfolio_id>', methods=['DELETE'])
+@log_request
+def delete_portfolio(portfolio_id):
+    """删除持仓组合"""
+    try:
+        # 删除组合下的所有持仓关联
+        _portfolio_position_storage.delete_portfolio_positions_by_portfolio(portfolio_id)
+        
+        # 删除组合
+        success = _portfolio_storage.delete_portfolio(portfolio_id)
+        if not success:
+            return jsonify({'error': '持仓组合不存在'}), 404
+        
+        return jsonify({'message': '持仓组合删除成功'})
+    except Exception as e:
+        logger.error(f"删除持仓组合失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 持仓接口 ====================
+
+@app.route('/api/positions', methods=['GET'])
+@log_request
+def get_positions():
+    """获取持仓列表"""
+    try:
+        fund_code = request.args.get('fund_code', '')
+        fund_name = request.args.get('fund_name', '')
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+        
+        positions, total = _position_storage.get_positions_with_pagination(
+            fund_code=fund_code,
+            fund_name=fund_name,
+            page=page,
+            page_size=page_size
+        )
+        
+        return jsonify({
+            'data': positions,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        })
+    except Exception as e:
+        logger.error(f"获取持仓列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/<int:position_id>', methods=['GET'])
+@log_request
+def get_position(position_id):
+    """获取单个持仓"""
+    try:
+        position = _position_storage.get_position_by_id(position_id)
+        if not position:
+            return jsonify({'error': '持仓不存在'}), 404
+        
+        return jsonify(position)
+    except Exception as e:
+        logger.error(f"获取持仓失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions', methods=['POST'])
+@log_request
+def create_position():
+    """创建持仓"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+        
+        fund_code = data.get('fund_code')
+        if not fund_code:
+            return jsonify({'error': '基金代码不能为空'}), 400
+        
+        position_id = _position_storage.create_position(data)
+        
+        return jsonify({
+            'id': position_id,
+            'message': '持仓创建成功'
+        }), 201
+    except Exception as e:
+        logger.error(f"创建持仓失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/<int:position_id>', methods=['PUT'])
+@log_request
+def update_position(position_id):
+    """更新持仓"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+        
+        success = _position_storage.update_position(position_id, data)
+        if not success:
+            return jsonify({'error': '持仓不存在'}), 404
+        
+        return jsonify({'message': '持仓更新成功'})
+    except Exception as e:
+        logger.error(f"更新持仓失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/<int:position_id>', methods=['DELETE'])
+@log_request
+def delete_position(position_id):
+    """删除持仓"""
+    try:
+        success = _position_storage.delete_position(position_id)
+        if not success:
+            return jsonify({'error': '持仓不存在'}), 404
+        
+        return jsonify({'message': '持仓删除成功'})
+    except Exception as e:
+        logger.error(f"删除持仓失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 组合持仓关联接口 ====================
+
+@app.route('/api/portfolio-positions', methods=['POST'])
+@log_request
+def create_portfolio_position():
+    """创建组合和持仓的关联"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+        
+        portfolio_id = data.get('portfolio_id')
+        position_id = data.get('position_id')
+        
+        if not portfolio_id or not position_id:
+            return jsonify({'error': '组合ID和持仓ID不能为空'}), 400
+        
+        relation_id = _portfolio_position_storage.create_portfolio_position(
+            portfolio_id=portfolio_id,
+            position_id=position_id,
+            remark=data.get('remark', '')
+        )
+        
+        return jsonify({
+            'id': relation_id,
+            'message': '关联创建成功'
+        }), 201
+    except Exception as e:
+        logger.error(f"创建组合持仓关联失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/portfolio-positions/<int:relation_id>', methods=['DELETE'])
+@log_request
+def delete_portfolio_position(relation_id):
+    """删除组合和持仓的关联"""
+    try:
+        success = _portfolio_position_storage.delete_portfolio_position(relation_id)
+        if not success:
+            return jsonify({'error': '关联不存在'}), 404
+        
+        return jsonify({'message': '关联删除成功'})
+    except Exception as e:
+        logger.error(f"删除组合持仓关联失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

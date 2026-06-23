@@ -182,6 +182,13 @@
             <el-option v-for="fund in quickBuyFundOptions" :key="fund.id" :label="`${fund.fund_code} - ${fund.fund_name}`" :value="fund.fund_code" />
           </el-select>
         </el-form-item>
+        <el-form-item label="策略" required>
+          <el-select v-model="quickBuyForm.policy" placeholder="请选择策略" style="width: 100%;">
+            <el-option label="定投-涨跌幅策略" value="change_pct_strategy" />
+            <el-option label="定投-固定策略" value="fixed_strategy" />
+          </el-select>
+
+        </el-form-item>
         <el-form-item label="涨跌幅(%)" required>
           <el-input v-model="quickBuyForm.change_pct" placeholder="请输入涨跌幅，如 0.5" />
         </el-form-item>
@@ -387,7 +394,8 @@ const handleMenuCommand = (command) => {
 const showQuickBuyDialog = () => {
   quickBuyForm.value = {
     fund_code: '',
-    change_pct: ''
+    change_pct: '',
+    policy: 'change_pct_strategy'
   }
   quickBuyFundOptions.value = funds.value.slice(0, 20)
   quickBuyVisible.value = true
@@ -407,13 +415,16 @@ const submitQuickBuy = async () => {
   try {
     await buyerApi.quickBuy({
       fund_code: quickBuyForm.value.fund_code,
-      change_pct: quickBuyForm.value.change_pct
+      change_pct: quickBuyForm.value.change_pct,
+      policy: quickBuyForm.value.policy
     })
     ElMessage.success('快捷买入成功')
     quickBuyVisible.value = false
     fetchBuyers()
   } catch (error) {
-    ElMessage.error('快捷买入失败: ' + (error.response?.data?.error || error.message))
+    const errorInfo = error.response?.data
+    const errorMsg = errorInfo?.error || errorInfo?.message || errorInfo?.success === false ? errorInfo.message : error.message
+    ElMessage.error('快捷买入失败: ' + errorMsg)
   }
 }
 

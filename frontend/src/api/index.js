@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
 
 // 根据环境选择不同的 baseURL
 const baseURL = import.meta.env.PROD ? '/prod-api' : '/api'
@@ -8,6 +7,20 @@ const api = axios.create({
   baseURL: baseURL,
   timeout: 10000
 })
+
+// 请求重试机制
+const retry = async (fn, retries = 2, delay = 1000) => {
+  try {
+    return await fn()
+  } catch (error) {
+    if (retries > 0 && (error.code === 'ECONNABORTED' || 
+        (error.response && error.response.status >= 500))) {
+      await new Promise(resolve => setTimeout(resolve, delay))
+      return retry(fn, retries - 1, delay * 2)
+    }
+    throw error
+  }
+}
 
 // 请求拦截器
 api.interceptors.request.use(
@@ -25,19 +38,7 @@ api.interceptors.response.use(
     return response.data
   },
   error => {
-    // 显示更详细的错误信息
-    let errorMsg = '请求失败'
-    if (error.response) {
-      // 后端返回的错误信息
-      errorMsg = error.response.data?.error || error.response.data?.message || error.message
-    } else if (error.request) {
-      // 请求已发送但没有响应
-      errorMsg = '服务器无响应，请检查网络连接'
-    } else {
-      // 请求配置错误
-      errorMsg = error.message
-    }
-    ElMessage.error(errorMsg)
+    // 不在这里显示错误消息，由调用方自行处理
     return Promise.reject(error)
   }
 )
@@ -110,4 +111,46 @@ export const buyerApi = {
 export const fundNavApi = {
   // 获取基金历史净值列表（支持日期范围筛选和分页）
   getNavHistory: (fundCode, params) => api.get('/funds/history', { params: { fund_code: fundCode, ...params } })
+}
+
+// 持仓组合相关API
+export const portfolioApi = {
+  // 获取组合列表（支持搜索和分页，不包含持仓）
+  getPortfolios: async (params) => retry(() => api.get('/portfolios', { params })),
+  
+  // 获取单个组合（包含持仓列表）
+  getPortfolio: (id) => api.get(`/portfolios/${id}`),
+  
+  // 获取组合的持仓列表
+  getPortfolioPositions: (portfolioId) => api.get(`/portfolios/${portfolioId}/positions`),
+  
+  // 创建组合
+  createPortfolio: (data) => api.post('/portfolios', data),
+  
+  // 更新组合
+  updatePortfolio: (id, data) => api.put(`/portfolios/${id}`, data),
+  
+  // 删除组合
+  deletePortfolio: (id) => api.delete(`/portfolios/${id}`),
+  
+  // 获取持仓列表（支持搜索和分页）
+  getPositions: (params) => api.get('/positions', { params }),
+  
+  // 获取单个持仓
+  getPosition: (id) => api.get(`/positions/${id}`),
+  
+  // 创建持仓
+  createPosition: (data) => api.post('/positions', data),
+  
+  // 更新持仓
+  updatePosition: (id, data) => api.put(`/positions/${id}`, data),
+  
+  // 删除持仓
+  deletePosition: (id) => api.delete(`/positions/${id}`),
+  
+  // 创建组合持仓关联
+  createPortfolioPosition: (data) => api.post('/portfolio-positions', data),
+  
+  // 删除组合持仓关联
+  deletePortfolioPosition: (id) => api.delete(`/portfolio-positions/${id}`)
 }
