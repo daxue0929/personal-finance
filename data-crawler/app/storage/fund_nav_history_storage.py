@@ -1,12 +1,10 @@
 from sqlalchemy import Column, Integer, String, Date, DECIMAL, DateTime, text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import QueuePool
-from sqlalchemy import event
 from datetime import datetime
 
 from ..utils.config import get_db_url
+from ..utils.db import get_db_session, get_db_engine
 
 Base = declarative_base()
 
@@ -27,43 +25,15 @@ class FundNavHistory(Base):
 
 class FundNavHistoryStorage:
     """基金历史净值存储类"""
-    
-    _engine = None
-    _session_factory = None
-    
+
     def __init__(self):
-        if FundNavHistoryStorage._engine is None:
-            FundNavHistoryStorage._engine = self._get_engine()
-        if FundNavHistoryStorage._session_factory is None:
-            FundNavHistoryStorage._session_factory = sessionmaker(bind=FundNavHistoryStorage._engine)
-        self.Session = FundNavHistoryStorage._session_factory
-    
-    @classmethod
-    def _get_engine(cls):
-        if cls._engine is None:
-            db_url = get_db_url()
-            cls._engine = create_engine(
-                db_url,
-                poolclass=QueuePool,
-                pool_size=20,
-                max_overflow=30,
-                pool_recycle=3600,
-                pool_pre_ping=True,
-                echo=False
-            )
+        # 使用全局数据库管理器
+        self.engine = get_db_engine()
+        self.Session = get_db_session
 
-            @event.listens_for(cls._engine, 'connect')
-            def set_timezone_on_connect(dbapi_connection, connection_record):
-                cursor = dbapi_connection.cursor()
-                cursor.execute("SET time_zone = '+08:00'")
-                cursor.execute("SET NAMES utf8mb4")
-                cursor.close()
-
-        return cls._engine
-    
     def get_session(self):
         """获取数据库会话"""
-        return FundNavHistoryStorage._session_factory()
+        return self.Session()
     
     def get_nav_history(self, fund_code=None, start_date=None, end_date=None, page=1, page_size=10):
         """

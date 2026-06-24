@@ -7,12 +7,13 @@
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 
-from sqlalchemy import create_engine, Column, BigInteger, String, Date, DateTime, DECIMAL, CHAR
+from sqlalchemy import Column, BigInteger, String, Date, DateTime, DECIMAL, CHAR
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from sqlalchemy import event
 
 from ..utils.config import get_db_url
+from ..utils.db import get_db_session, get_db_engine
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
 from .base import Base
@@ -39,43 +40,16 @@ class FundInfo(Base):
 
 
 class FundInfoStorage:
-    _engine = None
-    _session_factory = None
+    """基金信息数据存储层"""
 
     def __init__(self):
-        if FundInfoStorage._engine is None:
-            FundInfoStorage._engine = self._get_engine()
-        if FundInfoStorage._session_factory is None:
-            FundInfoStorage._session_factory = sessionmaker(bind=FundInfoStorage._engine)
-        self.Session = FundInfoStorage._session_factory
-        self.session = self.Session()
-
-    @classmethod
-    def _get_engine(cls):
-        if cls._engine is None:
-            db_url = get_db_url()
-            cls._engine = create_engine(
-                db_url,
-                poolclass=QueuePool,
-                pool_size=20,
-                max_overflow=30,
-                pool_recycle=3600,
-                pool_pre_ping=True,
-                echo=False
-            )
-
-            @event.listens_for(cls._engine, 'connect')
-            def set_timezone_on_connect(dbapi_connection, connection_record):
-                cursor = dbapi_connection.cursor()
-                cursor.execute("SET time_zone = '+08:00'")
-                cursor.execute("SET NAMES utf8mb4")
-                cursor.close()
-
-        return cls._engine
+        # 使用全局数据库管理器
+        self.engine = get_db_engine()
+        self.Session = get_db_session
 
     def get_session(self):
         """获取数据库会话"""
-        return FundInfoStorage._session_factory()
+        return self.Session()
 
     def get_all_fund_codes(self) -> List[str]:
         try:

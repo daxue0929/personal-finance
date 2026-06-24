@@ -7,7 +7,7 @@ import functools
 from sqlalchemy import text
 
 from ..utils.logger import logger
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition
 from ..utils.datetime_utils import get_beijing_now
 
 app = Flask(__name__)
@@ -989,26 +989,60 @@ def get_portfolio_positions(portfolio_id):
         portfolio = _portfolio_storage.get_portfolio_by_id(portfolio_id)
         if not portfolio:
             return jsonify({'error': '持仓组合不存在'}), 404
-        
-        # 获取持仓列表并计算统计数据
-        relations = _portfolio_position_storage.get_portfolio_positions(portfolio_id)
-        positions = []
-        total_value = 0.0
-        total_cost = 0.0
-        
-        for relation in relations:
-            position = _position_storage.get_position_by_id(relation['position_id'])
-            if position:
-                positions.append(position)
-                total_value += float(position.get('current_value', 0))
-                total_cost += float(position.get('shares', 0)) * float(position.get('cost_price', 0))
-        
-        return jsonify({
-            'data': positions,
-            'total_value': total_value,
-            'total_cost': total_cost,
-            'total_profit_loss': total_value - total_cost
-        })
+
+        # 使用优化后的查询方法，避免N+1查询问题
+        from ..storage.position_storage import Position
+
+        session = _portfolio_position_storage.get_session()
+        try:
+            # 使用JOIN查询一次获取所有关联数据
+            query = session.query(
+                Position
+            ).join(
+                PortfolioPosition,
+                PortfolioPosition.position_id == Position.id,
+                isouter=True
+            ).filter(
+                PortfolioPosition.portfolio_id == portfolio_id,
+                PortfolioPosition.del_flag == '1',
+                Position.del_flag == '1'
+            ).all()
+
+            positions = []
+            total_value = 0.0
+            total_cost = 0.0
+
+            for position in query:
+                pos_data = {
+                    'id': position.id,
+                    'fund_code': position.fund_code,
+                    'fund_name': position.fund_name,
+                    'shares': float(position.shares) if position.shares else 0.0,
+                    'cost_price': float(position.cost_price) if position.cost_price else 0.0,
+                    'current_price': float(position.current_price) if position.current_price else 0.0,
+                    'current_value': float(position.current_value) if position.current_value else 0.0,
+                    'cost_amount': float(position.cost_amount) if position.cost_amount else 0.0,
+                    'profit_loss': float(position.profit_loss) if position.profit_loss else 0.0,
+                    'profit_loss_rate': float(position.profit_loss_rate) if position.profit_loss_rate else 0.0,
+                    'buy_date': str(position.buy_date) if position.buy_date else None,
+                    'remark': position.remark,
+                    'create_time': str(position.create_time) if position.create_time else None,
+                    'update_time': str(position.update_time) if position.update_time else None
+                }
+                positions.append(pos_data)
+
+                # 累加统计数据
+                total_value += float(position.current_value) if position.current_value else 0.0
+                total_cost += float(position.shares) * float(position.cost_price) if position.shares and position.cost_price else 0.0
+
+            return jsonify({
+                'data': positions,
+                'total_value': total_value,
+                'total_cost': total_cost,
+                'total_profit_loss': total_value - total_cost
+            })
+        finally:
+            session.close()
     except Exception as e:
         logger.error(f"获取组合持仓列表失败: {e}")
         return jsonify({'error': str(e)}), 500
@@ -1213,6 +1247,35 @@ def delete_position(position_id):
 
 
 # ==================== 组合持仓关联接口 ====================
+
+@app.route('/api/portfolios/batch', methods=['POST'])
+@log_request
+def get_portfolios_batch():
+    """批量获取组合及其持仓信息（优化性能）"""
+    try:
+        data = request.get_json()
+        if not data or 'portfolio_ids' not in data:
+            return jsonify({'error': '缺少portfolio_ids参数'}), 400
+
+        portfolio_ids = data['portfolio_ids']
+        if not isinstance(portfolio_ids, list) or not portfolio_ids:
+            return jsonify({'error': 'portfolio_ids必须是非空列表'}), 400
+
+        results = []
+        for portfolio_id in portfolio_ids:
+            # 使用优化的方法获取组合信息
+            portfolio_info = _portfolio_storage.get_portfolio_with_positions(portfolio_id)
+            if portfolio_info:
+                results.append(portfolio_info)
+
+        return jsonify({
+            'data': results,
+            'count': len(results)
+        })
+    except Exception as e:
+        logger.error(f"批量获取组合信息失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/portfolio-positions', methods=['POST'])
 @log_request

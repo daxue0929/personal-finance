@@ -8,11 +8,12 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy import create_engine, Column, BigInteger, String, Date, DateTime, DECIMAL, CHAR
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, joinedload
 from sqlalchemy.pool import QueuePool
-from sqlalchemy import event
+from sqlalchemy import event, and_
 
 from ..utils.config import get_db_url
+from ..utils.db import get_db_session, get_db_engine
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
 from .base import Base
@@ -36,43 +37,16 @@ class Portfolio(Base):
 
 
 class PortfolioStorage:
-    _engine = None
-    _session_factory = None
+    """持仓组合数据存储层"""
 
     def __init__(self):
-        if PortfolioStorage._engine is None:
-            PortfolioStorage._engine = self._get_engine()
-        if PortfolioStorage._session_factory is None:
-            PortfolioStorage._session_factory = sessionmaker(bind=PortfolioStorage._engine)
-        self.Session = PortfolioStorage._session_factory
-        self.session = self.Session()
-
-    @classmethod
-    def _get_engine(cls):
-        if cls._engine is None:
-            db_url = get_db_url()
-            cls._engine = create_engine(
-                db_url,
-                poolclass=QueuePool,
-                pool_size=20,
-                max_overflow=30,
-                pool_recycle=3600,
-                pool_pre_ping=True,
-                echo=False
-            )
-
-            @event.listens_for(cls._engine, 'connect')
-            def set_timezone_on_connect(dbapi_connection, connection_record):
-                cursor = dbapi_connection.cursor()
-                cursor.execute("SET time_zone = '+08:00'")
-                cursor.execute("SET NAMES utf8mb4")
-                cursor.close()
-
-        return cls._engine
+        # 使用全局数据库管理器
+        self.engine = get_db_engine()
+        self.Session = get_db_session
 
     def get_session(self):
         """获取数据库会话"""
-        return PortfolioStorage._session_factory()
+        return self.Session()
 
     def get_portfolios_with_pagination(self, name=None, page=1, page_size=10):
         """
@@ -85,17 +59,17 @@ class PortfolioStorage:
         session = self.get_session()
         try:
             query = session.query(Portfolio).filter(Portfolio.del_flag == '1')
-            
+
             # 添加搜索条件
             if name:
                 query = query.filter(Portfolio.name.like(f'%{name}%'))
-            
+
             # 获取总数
             total = query.count()
-            
+
             # 分页查询
             portfolios = query.offset((page - 1) * page_size).limit(page_size).all()
-            
+
             result = []
             for portfolio in portfolios:
                 result.append({
@@ -106,8 +80,104 @@ class PortfolioStorage:
                     'create_time': str(portfolio.create_time) if portfolio.create_time else None,
                     'update_time': str(portfolio.update_time) if portfolio.update_time else None
                 })
-            
+
             return result, total
+        finally:
+            session.close()
+
+    def get_portfolio_with_positions(self, portfolio_id: int) -> Optional[Dict]:
+        """
+        获取持仓组合及其关联的所有持仓（使用JOIN查询优化性能）
+        :param portfolio_id: 组合ID
+        :return: 组合信息（包含positions列表）
+        """
+        session = self.get_session()
+        try:
+            from .position_storage import Position
+
+            # 使用JOIN查询一次获取所有关联数据
+            query = session.query(
+                Portfolio,
+                Position
+            ).outerjoin(
+                PortfolioPosition,
+                and_(
+                    PortfolioPosition.portfolio_id == Portfolio.id,
+                    PortfolioPosition.del_flag == '1'
+                )
+            ).outerjoin(
+                Position,
+                and_(
+                    Position.id == PortfolioPosition.position_id,
+                    Position.del_flag == '1'
+                )
+            ).filter(
+                Portfolio.id == portfolio_id,
+                Portfolio.del_flag == '1'
+            ).all()
+
+            if not query:
+                return None
+
+            # 处理查询结果
+            portfolio_info = None
+            positions = []
+
+            for row in query:
+                portfolio, position = row
+
+                if portfolio_info is None:
+                    portfolio_info = {
+                        'id': portfolio.id,
+                        'name': portfolio.name,
+                        'description': portfolio.description,
+                        'total_value': float(portfolio.total_value) if portfolio.total_value else 0.0,
+                        'total_cost': float(portfolio.total_cost) if portfolio.total_cost else 0.0,
+                        'total_profit_loss': float(portfolio.total_profit_loss) if portfolio.total_profit_loss else 0.0,
+                        'remark': portfolio.remark,
+                        'create_time': str(portfolio.create_time) if portfolio.create_time else None,
+                        'update_time': str(portfolio.update_time) if portfolio.update_time else None
+                    }
+
+                if position:
+                    positions.append({
+                        'id': position.id,
+                        'fund_code': position.fund_code,
+                        'fund_name': position.fund_name,
+                        'shares': float(position.shares) if position.shares else 0.0,
+                        'cost_price': float(position.cost_price) if position.cost_price else 0.0,
+                        'current_price': float(position.current_price) if position.current_price else 0.0,
+                        'current_value': float(position.current_value) if position.current_value else 0.0,
+                        'cost_amount': float(position.cost_amount) if position.cost_amount else 0.0,
+                        'profit_loss': float(position.profit_loss) if position.profit_loss else 0.0,
+                        'profit_loss_rate': float(position.profit_loss_rate) if position.profit_loss_rate else 0.0,
+                        'buy_date': str(position.buy_date) if position.buy_date else None,
+                        'remark': position.remark,
+                        'create_time': str(position.create_time) if position.create_time else None,
+                        'update_time': str(position.update_time) if position.update_time else None
+                    })
+
+            # 使用SQL计算总市值和总成本，避免Python循环计算
+            total_value = 0.0
+            total_cost = 0.0
+
+            if positions:
+                # 批量查询计算统计数据
+                position_ids = [p['id'] for p in positions]
+                cost_prices = {pos['id']: pos['cost_price'] for pos in positions}
+                shares = {pos['id']: pos['shares'] for pos in positions}
+                current_values = {pos['id']: pos['current_value'] for pos in positions}
+
+                for pos_id in position_ids:
+                    total_value += float(current_values.get(pos_id, 0))
+                    total_cost += float(shares.get(pos_id, 0)) * float(cost_prices.get(pos_id, 0))
+
+            portfolio_info['positions'] = positions
+            portfolio_info['total_value'] = total_value
+            portfolio_info['total_cost'] = total_cost
+            portfolio_info['total_profit_loss'] = total_value - total_cost
+
+            return portfolio_info
         finally:
             session.close()
 
