@@ -1,6 +1,7 @@
 import flask
 from flask import Flask, jsonify, request
 import threading
+import traceback
 from datetime import datetime as dt
 import time
 import functools
@@ -19,6 +20,7 @@ _nav_storage = FundNavHistoryStorage()
 _portfolio_storage = PortfolioStorage()
 _position_storage = PositionStorage()
 _portfolio_position_storage = PortfolioPositionStorage()
+_log_storage = None
 
 
 def set_scheduler(scheduler):
@@ -46,7 +48,18 @@ def log_request(func):
         client_ip = request.remote_addr
         user_agent = request.headers.get('User-Agent', '')[:100]
         
-        logger.info(f"【请求开始】[TraceID:{trace_id}] {method} {path} | IP: {client_ip} | 请求参数: {query_params} | 请求体: {body}")
+        log_extra = {
+            'trace_id': trace_id,
+            'request_method': method,
+            'request_path': path,
+            'request_ip': client_ip,
+            'category': 'api'
+        }
+        
+        logger.info(
+            f"【请求开始】[TraceID:{trace_id}] {method} {path} | IP: {client_ip} | 请求参数: {query_params} | 请求体: {body}",
+            extra=log_extra
+        )
         
         try:
             response = func(*args, **kwargs)
@@ -70,11 +83,18 @@ def log_request(func):
                     response = flask.jsonify(response)
                     response.headers['X-Trace-ID'] = trace_id
             
-            logger.info(f"【请求完成】[TraceID:{trace_id}] {method} {path} | 状态码: {status_code} | 耗时: {elapsed_time:.2f}ms")
+            logger.info(
+                f"【请求完成】[TraceID:{trace_id}] {method} {path} | 状态码: {status_code} | 耗时: {elapsed_time:.2f}ms",
+                extra=log_extra
+            )
             return response
         except Exception as e:
             elapsed_time = (time.time() - start_time) * 1000
-            logger.error(f"【请求失败】[TraceID:{trace_id}] {method} {path} | 错误: {str(e)} | 耗时: {elapsed_time:.2f}ms")
+            log_extra['error_stack'] = traceback.format_exc()
+            logger.error(
+                f"【请求失败】[TraceID:{trace_id}] {method} {path} | 错误: {str(e)} | 耗时: {elapsed_time:.2f}ms",
+                extra=log_extra
+            )
             raise
     return wrapper
 
@@ -97,7 +117,12 @@ def trigger_crawl():
 def run_task(task_func):
     """立即执行指定任务"""
     try:
-        force_run = request.json.get('force_run', False) if request.json else False
+        force_run = False
+        try:
+            if request.json:
+                force_run = request.json.get('force_run', False)
+        except Exception:
+            pass
 
         if scheduler_instance:
             success = scheduler_instance.run_job_now(task_func, force_run=force_run)
@@ -1319,6 +1344,122 @@ def delete_portfolio_position(relation_id):
         return jsonify({'message': '关联删除成功'})
     except Exception as e:
         logger.error(f"删除组合持仓关联失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 系统日志API ====================
+
+@app.route('/api/logs', methods=['GET'])
+@log_request
+def get_logs():
+    """获取系统日志列表（支持搜索和分页）"""
+    try:
+        global _log_storage
+        
+        if not _log_storage:
+            from ..storage import SystemLogStorage
+            _log_storage = SystemLogStorage()
+        
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+        level = request.args.get('level', '')
+        category = request.args.get('category', '')
+        trace_id = request.args.get('trace_id', '')
+        request_path = request.args.get('request_path', '')
+        task_name = request.args.get('task_name', '')
+        start_time = request.args.get('start_time', '')
+        end_time = request.args.get('end_time', '')
+        
+        logs, total = _log_storage.get_logs_with_pagination(
+            level=level if level else None,
+            category=category if category else None,
+            trace_id=trace_id if trace_id else None,
+            request_path=request_path if request_path else None,
+            task_name=task_name if task_name else None,
+            start_time=start_time if start_time else None,
+            end_time=end_time if end_time else None,
+            page=page,
+            page_size=page_size
+        )
+        
+        return jsonify({
+            'data': logs,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }), 200
+    except Exception as e:
+        logger.error(f"获取系统日志失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/logs/<int:log_id>', methods=['GET'])
+@log_request
+def get_log(log_id):
+    """获取单个日志详情"""
+    try:
+        global _log_storage
+        
+        if not _log_storage:
+            from ..storage import SystemLogStorage
+            _log_storage = SystemLogStorage()
+        
+        log = _log_storage.get_log_by_id(log_id)
+        if log:
+            return jsonify(log), 200
+        else:
+            return jsonify({'error': '日志不存在'}), 404
+    except Exception as e:
+        logger.error(f"获取日志详情失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/logs/<int:log_id>', methods=['DELETE'])
+@log_request
+def delete_log(log_id):
+    """删除日志记录"""
+    try:
+        global _log_storage
+        
+        if not _log_storage:
+            from ..storage import SystemLogStorage
+            _log_storage = SystemLogStorage()
+        
+        success = _log_storage.delete_log(log_id)
+        if success:
+            return jsonify({'message': '日志删除成功'}), 200
+        else:
+            return jsonify({'error': '日志不存在'}), 404
+    except Exception as e:
+        logger.error(f"删除日志失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/logs/clean', methods=['POST'])
+@log_request
+def clean_logs():
+    """清理指定时间之前的日志"""
+    try:
+        global _log_storage
+        
+        if not _log_storage:
+            from ..storage import SystemLogStorage
+            _log_storage = SystemLogStorage()
+        
+        data = request.get_json()
+        days_to_keep = data.get('days_to_keep', 30)
+        
+        from datetime import datetime, timedelta
+        before_time = datetime.now() - timedelta(days=days_to_keep)
+        
+        deleted_count = _log_storage.delete_logs_by_time(before_time)
+        
+        return jsonify({
+            'message': f'清理成功，共删除 {deleted_count} 条日志',
+            'deleted_count': deleted_count
+        }), 200
+    except Exception as e:
+        logger.error(f"清理日志失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

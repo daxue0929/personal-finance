@@ -36,6 +36,7 @@ class FundBuyer(Base):
     update_time = Column(DateTime)
     remark = Column(String(500))
     buy_status = Column(String(20), default='PENDING')
+    shares = Column(DECIMAL(15, 4), default=None)
 
 
 class FundBuyerStorage:
@@ -135,6 +136,8 @@ class FundBuyerStorage:
                 buyer.policy = data['policy']
             if 'buy_status' in data:
                 buyer.buy_status = data['buy_status']
+            if 'shares' in data:
+                buyer.shares = data['shares']
             if 'remark' in data:
                 buyer.remark = data['remark']
 
@@ -174,6 +177,70 @@ class FundBuyerStorage:
         except Exception as e:
             session.rollback()
             logger.error(f"删除买入记录失败: {e}")
+            return False
+        finally:
+            session.close()
+
+    def get_pending_buyers(self) -> List[Dict[str, Any]]:
+        """
+        获取所有待处理的买入记录（状态为PENDING）
+        :return: 待处理买入记录列表，按买入时间升序、ID升序排序
+        """
+        session = self.get_session()
+        try:
+            buyers = session.query(FundBuyer).filter(
+                FundBuyer.del_flag == '1',
+                FundBuyer.buy_status == 'PENDING'
+            ).order_by(FundBuyer.time.asc(), FundBuyer.id.asc()).all()
+            
+            result = []
+            for buyer in buyers:
+                result.append({
+                    'id': buyer.id,
+                    'fund_code': buyer.fund_code,
+                    'fund_name': buyer.fund_name,
+                    'time': str(buyer.time),
+                    'amt': float(buyer.amt) if buyer.amt else 0.0,
+                    'type': buyer.type,
+                    'policy': buyer.policy,
+                    'buy_status': buyer.buy_status,
+                    'shares': float(buyer.shares) if buyer.shares else None,
+                    'remark': buyer.remark
+                })
+            return result
+        finally:
+            session.close()
+
+    def update_buyer_shares(self, buyer_id: int, shares: float, buy_status: str = 'SUCCESS') -> bool:
+        """
+        更新买入记录的份额和状态
+        :param buyer_id: 买入记录ID
+        :param shares: 计算后的份额
+        :param buy_status: 买入状态（默认SUCCESS）
+        :return: True/False
+        """
+        session = self.get_session()
+        try:
+            buyer = session.query(FundBuyer).filter(
+                FundBuyer.id == buyer_id,
+                FundBuyer.del_flag == '1'
+            ).first()
+            
+            if not buyer:
+                logger.warning(f"买入记录 {buyer_id} 不存在")
+                return False
+
+            buyer.shares = shares
+            buyer.buy_status = buy_status
+            buyer.update_by = 'system'
+            buyer.update_time = get_beijing_now()
+
+            session.commit()
+            logger.info(f"更新买入记录 {buyer_id} 份额成功: {shares}, 状态: {buy_status}")
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"更新买入记录 {buyer_id} 份额失败: {e}")
             return False
         finally:
             session.close()
@@ -252,6 +319,7 @@ class FundBuyerStorage:
                     'type': buyer.type,
                     'policy': buyer.policy,
                     'buy_status': buyer.buy_status,
+                    'shares': float(buyer.shares) if buyer.shares else None,
                     'remark': buyer.remark,
                     'create_time': str(buyer.create_time) if buyer.create_time else None,
                     'update_time': str(buyer.update_time) if buyer.update_time else None

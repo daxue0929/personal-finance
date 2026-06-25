@@ -1,7 +1,13 @@
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from .scheduler import create_cron_scheduler
 from .web import create_app, start_server_in_background, set_scheduler
 from .task import register_all_tasks
-from .utils.logger import logger
+from .utils.logger import logger, start_log_queue, stop_log_queue
 
 
 def main():
@@ -25,6 +31,7 @@ def main():
     set_scheduler(scheduler)
 
     start_server_in_background(port=args.port, debug=args.debug)
+    start_log_queue()
     scheduler.start()
 
     logger.info("服务已启动，按 Ctrl+C 停止")
@@ -35,6 +42,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("收到停止信号")
         scheduler.stop()
+        stop_log_queue()
 
 
 if __name__ == '__main__':

@@ -24,6 +24,7 @@ CREATE TABLE `fund_buyer` (
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '备注',
   `buy_status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'PENDING' COMMENT '买入状态（PENDING待处理/SUCCESS成功/FAILED失败）',
+  `shares` decimal(15,4) DEFAULT NULL COMMENT '买入份额（日舍五入，保留两位小数）',
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `uk_fund_code_time` (`fund_code`,`time`) USING BTREE COMMENT '基金代码+买入日期唯一索引',
   KEY `idx_fund_code` (`fund_code`) USING BTREE COMMENT '基金代码索引',

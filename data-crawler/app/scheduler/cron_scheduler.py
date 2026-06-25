@@ -14,7 +14,7 @@ class CronTaskScheduler:
         self.scheduler = BackgroundScheduler(timezone='Asia/Shanghai')
         self.task_registry = {}
         self.last_check_time = 0
-        self.check_interval = 10
+        self.check_interval = 60
         self._running = False
         self._check_thread = None
         self._task_storage = TaskScheduleStorage()

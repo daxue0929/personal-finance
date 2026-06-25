@@ -40,6 +40,7 @@
         <div style="display: flex; gap: 10px;">
           <el-button type="primary" @click="showAddDialog">新增买入记录</el-button>
           <el-button type="success" @click="showQuickBuyDialog">快捷买入</el-button>
+          <el-button type="warning" @click="refreshShares" :loading="refreshing">刷新份额</el-button>
         </div>
         <el-popover
           v-model:visible="popoverVisible"
@@ -82,6 +83,11 @@
           <el-table-column prop="amt" label="买入金额" width="120" sortable="custom">
             <template #default="{ row }">
               {{ row.amt.toFixed(4) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="shares" label="买入份额" width="120" sortable="custom">
+            <template #default="{ row }">
+              {{ row.shares !== null && row.shares !== undefined ? row.shares.toFixed(4) : '-' }}
             </template>
           </el-table-column>
           <el-table-column prop="type" label="买入类型" width="120" sortable="custom">
@@ -143,6 +149,9 @@
         </el-form-item>
         <el-form-item label="买入金额" required>
           <el-input v-model="formData.amt" placeholder="请输入买入金额" />
+        </el-form-item>
+        <el-form-item label="买入份额">
+          <el-input v-model="formData.shares" placeholder="自动计算" disabled />
         </el-form-item>
         <el-form-item label="买入类型">
           <el-select v-model="formData.type" placeholder="请选择买入类型">
@@ -211,6 +220,7 @@ const buyers = ref([])
 const funds = ref([])
 const fundOptions = ref([])
 const loading = ref(false)
+const refreshing = ref(false)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
@@ -289,6 +299,7 @@ const formData = ref({
   fund_name: '',
   time: '',
   amt: 0.0,
+  shares: null,
   type: '',
   policy: '',
   buy_status: 'PENDING',
@@ -383,6 +394,26 @@ const exportData = () => {
   ElMessage.info('导出功能开发中...')
 }
 
+// 刷新份额（手动触发计算份额任务）
+const refreshShares = async () => {
+  refreshing.value = true
+  try {
+    await fetch('/api/task/run/calculate_buyer_shares_task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    ElMessage.success('份额刷新已触发，请稍后刷新页面查看结果')
+    // 延迟刷新列表
+    setTimeout(() => {
+      fetchBuyers()
+    }, 2000)
+  } catch (error) {
+    ElMessage.error('刷新份额失败')
+  } finally {
+    refreshing.value = false
+  }
+}
+
 // 处理菜单命令
 const handleMenuCommand = (command) => {
   if (command === 'export') {
@@ -453,6 +484,7 @@ const showEditDialog = (row) => {
     fund_name: row.fund_name,
     time: row.time,
     amt: row.amt,
+    shares: row.shares,
     type: row.type,
     policy: row.policy,
     buy_status: row.buy_status,

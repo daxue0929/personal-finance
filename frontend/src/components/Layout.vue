@@ -12,16 +12,32 @@
         text-color="#fff"
         active-text-color="#ffd04b"
       >
-        <el-menu-item
-          v-for="menu in menuItems"
-          :key="menu.path"
-          :index="menu.path"
-        >
-          <el-icon>
-            <component :is="getIconComponent(menu.path)" />
-          </el-icon>
-          <span>{{ menu.meta.title }}</span>
-        </el-menu-item>
+        <template v-for="menu in menuItems" :key="menu.path">
+          <el-sub-menu v-if="menu.meta?.isParent && menu.children" :index="menu.path">
+            <template #title>
+              <el-icon>
+                <component :is="getIconComponent(menu.path)" />
+              </el-icon>
+              <span>{{ menu.meta.title }}</span>
+            </template>
+            <el-menu-item
+              v-for="child in getChildrenMenu(menu)"
+              :key="child.path"
+              :index="child.path"
+            >
+              <el-icon>
+                <component :is="getIconComponent(child.path)" />
+              </el-icon>
+              <span>{{ child.meta.title }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <el-menu-item v-else :index="menu.path">
+            <el-icon>
+              <component :is="getIconComponent(menu.path)" />
+            </el-icon>
+            <span>{{ menu.meta.title }}</span>
+          </el-menu-item>
+        </template>
       </el-menu>
     </el-aside>
 
@@ -42,7 +58,7 @@
 <script setup>
 import { computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Setting, Wallet, ShoppingCart, TrendCharts, Folder } from '@element-plus/icons-vue'
+import { Setting, Wallet, ShoppingCart, TrendCharts, Folder, Monitor } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -54,6 +70,12 @@ const menuItems = computed(() => {
     .filter(r => r.path && r.meta?.title)
     .sort((a, b) => (a.meta?.sort || 0) - (b.meta?.sort || 0))
 })
+
+const getChildrenMenu = (menu) => {
+  return (menu.children || [])
+    .filter(r => r.path && r.meta?.title)
+    .sort((a, b) => (a.meta?.sort || 0) - (b.meta?.sort || 0))
+}
 
 const activeMenu = computed(() => {
   return route.path
@@ -69,7 +91,10 @@ const iconMap = {
   '/buyers': ShoppingCart,
   '/funds': Wallet,
   '/funds/history': TrendCharts,
-  '/tasks': Setting
+  '/tasks': Setting,
+  '/system': Monitor,
+  '/system/logs': Monitor,
+  '/system/tasks': Setting
 }
 
 const getIconComponent = (path) => {

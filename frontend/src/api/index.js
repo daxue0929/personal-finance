@@ -113,6 +113,21 @@ export const fundNavApi = {
   getNavHistory: (fundCode, params) => api.get('/funds/history', { params: { fund_code: fundCode, ...params } })
 }
 
+// 系统日志相关API
+export const logApi = {
+  // 获取日志列表（支持搜索和分页）
+  getLogs: (params) => api.get('/logs', { params }),
+
+  // 获取单个日志详情
+  getLog: (id) => api.get(`/logs/${id}`),
+
+  // 删除日志
+  deleteLog: (id) => api.delete(`/logs/${id}`),
+
+  // 清理日志
+  cleanLogs: (data) => api.post('/logs/clean', data)
+}
+
 // 持仓组合相关API
 export const portfolioApi = {
   // 获取组合列表（支持搜索和分页，不包含持仓）

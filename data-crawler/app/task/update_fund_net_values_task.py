@@ -44,4 +44,4 @@ def update_fund_net_values_task(force_run: bool = False):
     except Exception as e:
         logger.error(f"基金净值更新任务异常: {e}")
     finally:
-        storage.close()
+        pass

@@ -5,6 +5,7 @@ import FundManage from '@/views/FundManage.vue'
 import FundBuyer from '@/views/FundBuyer.vue'
 import FundNavHistory from '@/views/FundNavHistory.vue'
 import PortfolioBoard from '@/views/PortfolioBoard.vue'
+import SystemLog from '@/views/SystemLog.vue'
 
 const routes = [
   {
@@ -37,10 +38,23 @@ const routes = [
         meta: { title: '基金历史净值', sort: 40 }
       },
       {
-        path: '/tasks',
-        name: 'TaskManage',
-        component: TaskManage,
-        meta: { title: '任务配置管理', sort: 50 }
+        path: '/system',
+        name: 'System',
+        meta: { title: '系统管理', sort: 50, isParent: true },
+        children: [
+          {
+            path: '/system/logs',
+            name: 'SystemLog',
+            component: SystemLog,
+            meta: { title: '系统日志', sort: 51, parentTitle: '系统管理' }
+          },
+          {
+            path: '/system/tasks',
+            name: 'TaskManage',
+            component: TaskManage,
+            meta: { title: '任务配置管理', sort: 52, parentTitle: '系统管理' }
+          }
+        ]
       }
     ]
   }

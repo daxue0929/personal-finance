@@ -212,5 +212,4 @@ class TaskScheduleStorage:
             session.close()
 
     def close(self):
-        if self._engine:
-            self._engine.dispose()
+        pass
