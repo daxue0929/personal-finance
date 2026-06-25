@@ -8,7 +8,7 @@
 import os
 from urllib.parse import quote
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from sqlalchemy import event
 import logging
@@ -16,13 +16,13 @@ import logging
 # 获取logger
 logger = logging.getLogger(__name__)
 
+
 class DatabaseManager:
-    """数据库管理器类"""
+    """数据库管理器类（单例模式）"""
 
     _instance = None
     _engine = None
     _session_factory = None
-    _session = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -37,10 +37,10 @@ class DatabaseManager:
         """初始化数据库引擎"""
         # 从环境变量获取配置，如果没有则使用默认值
         db_config = {
-            'host': os.getenv('MYSQL_HOST', '117.72.53.38'),
+            'host': os.getenv('MYSQL_HOST', '127.0.0.1'),
             'port': int(os.getenv('MYSQL_PORT', '3306')),
             'user': os.getenv('MYSQL_USER', 'root'),
-            'password': os.getenv('MYSQL_PASSWORD', 'wangxuedi3319@'),
+            'password': os.getenv('MYSQL_PASSWORD', ''),  # 密码必须从环境变量获取
             'database': os.getenv('MYSQL_DATABASE', 'personal-finance'),
             'charset': 'utf8mb4',
             'pool_size': int(os.getenv('DB_POOL_SIZE', '20')),
@@ -92,9 +92,6 @@ class DatabaseManager:
             expire_on_commit=False
         )
 
-        # 创建线程安全的scoped session
-        self._session = scoped_session(self._session_factory)
-
         logger.info("数据库连接池初始化完成")
 
     @property
@@ -102,19 +99,12 @@ class DatabaseManager:
         """获取数据库引擎"""
         return self._engine
 
-    @property
-    def session(self):
-        """获取数据库会话"""
-        return self._session
-
     def get_session(self):
         """获取新的数据库会话"""
         return self._session_factory()
 
     def close_all(self):
         """关闭所有连接"""
-        if self._session:
-            self._session.remove()
         if self._engine:
             self._engine.dispose()
             logger.info("数据库连接池已关闭")
@@ -126,8 +116,12 @@ db_manager = DatabaseManager()
 
 # 便捷函数
 def get_db_session():
-    """获取数据库会话"""
-    return db_manager.session
+    """获取新的数据库会话（推荐使用）
+    
+    注意：每次调用都返回一个新的 session 实例，
+    避免同一线程中多个方法共享 session 导致的并发问题。
+    """
+    return db_manager.get_session()
 
 
 def get_db_engine():

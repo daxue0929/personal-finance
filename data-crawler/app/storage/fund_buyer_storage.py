@@ -52,27 +52,34 @@ class FundBuyerStorage:
 
     def get_all_buyers(self) -> List[FundBuyer]:
         """获取所有买入记录"""
+        session = self.get_session()
         try:
-            return self.session.query(FundBuyer).filter(
+            return session.query(FundBuyer).filter(
                 FundBuyer.del_flag == '1'
             ).order_by(FundBuyer.time.desc()).all()
         except Exception as e:
             logger.error(f"获取买入记录失败: {e}")
             return []
+        finally:
+            session.close()
 
     def get_buyer_by_id(self, buyer_id: int) -> Optional[FundBuyer]:
         """根据ID获取买入记录"""
+        session = self.get_session()
         try:
-            return self.session.query(FundBuyer).filter(
+            return session.query(FundBuyer).filter(
                 FundBuyer.id == buyer_id,
                 FundBuyer.del_flag == '1'
             ).first()
         except Exception as e:
             logger.error(f"获取买入记录 {buyer_id} 失败: {e}")
             return None
+        finally:
+            session.close()
 
     def create_buyer(self, data: Dict[str, Any]) -> bool:
         """创建买入记录"""
+        session = self.get_session()
         try:
             new_buyer = FundBuyer(
                 fund_code=data.get('fund_code', ''),
@@ -89,20 +96,27 @@ class FundBuyerStorage:
                 update_by=data.get('create_by', 'api'),
                 update_time=get_beijing_now()
             )
-            self.session.add(new_buyer)
-            self.session.commit()
-            self.session.refresh(new_buyer)
+            session.add(new_buyer)
+            session.commit()
+            session.refresh(new_buyer)
             logger.info(f"创建买入记录成功: {new_buyer.id}")
             return True
         except Exception as e:
-            self.session.rollback()
+            session.rollback()
             logger.error(f"创建买入记录失败: {e}")
             return False
+        finally:
+            session.close()
 
     def update_buyer(self, buyer_id: int, data: Dict[str, Any]) -> bool:
         """更新买入记录"""
+        session = self.get_session()
         try:
-            buyer = self.get_buyer_by_id(buyer_id)
+            buyer = session.query(FundBuyer).filter(
+                FundBuyer.id == buyer_id,
+                FundBuyer.del_flag == '1'
+            ).first()
+            
             if not buyer:
                 logger.warning(f"买入记录 {buyer_id} 不存在")
                 return False
@@ -127,18 +141,25 @@ class FundBuyerStorage:
             buyer.update_by = data.get('update_by', 'api')
             buyer.update_time = get_beijing_now()
 
-            self.session.commit()
+            session.commit()
             logger.info(f"更新买入记录成功: {buyer_id}")
             return True
         except Exception as e:
-            self.session.rollback()
+            session.rollback()
             logger.error(f"更新买入记录失败: {e}")
             return False
+        finally:
+            session.close()
 
     def delete_buyer(self, buyer_id: int) -> bool:
         """删除买入记录（软删除）"""
+        session = self.get_session()
         try:
-            buyer = self.get_buyer_by_id(buyer_id)
+            buyer = session.query(FundBuyer).filter(
+                FundBuyer.id == buyer_id,
+                FundBuyer.del_flag == '1'
+            ).first()
+            
             if not buyer:
                 logger.warning(f"买入记录 {buyer_id} 不存在")
                 return False
@@ -147,13 +168,15 @@ class FundBuyerStorage:
             buyer.update_by = 'api'
             buyer.update_time = get_beijing_now()
 
-            self.session.commit()
+            session.commit()
             logger.info(f"删除买入记录成功: {buyer_id}")
             return True
         except Exception as e:
-            self.session.rollback()
+            session.rollback()
             logger.error(f"删除买入记录失败: {e}")
             return False
+        finally:
+            session.close()
 
     def get_buyers_with_pagination(self, fund_code=None, fund_name=None, buy_type=None, 
                                    buy_status=None, start_time=None, end_time=None,
@@ -238,6 +261,3 @@ class FundBuyerStorage:
         finally:
             session.close()
 
-    def close(self):
-        if self.session:
-            self.session.close()

@@ -241,6 +241,3 @@ class PortfolioPositionStorage:
         finally:
             session.close()
 
-    def close(self):
-        if self.session:
-            self.session.close()

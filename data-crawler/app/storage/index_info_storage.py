@@ -58,28 +58,35 @@ class IndexInfoStorage:
         return self.Session()
 
     def get_all_index_codes(self) -> List[str]:
+        session = self.get_session()
         try:
-            index_codes = self.session.query(IndexInfo.index_code).filter(
+            index_codes = session.query(IndexInfo.index_code).filter(
                 IndexInfo.del_flag == '1'
             ).distinct().all()
             return [code[0] for code in index_codes]
         except Exception as e:
             logger.error(f"获取指数代码列表失败: {e}")
             return []
+        finally:
+            session.close()
 
     def get_index_by_code(self, index_code: str) -> Optional[IndexInfo]:
+        session = self.get_session()
         try:
-            return self.session.query(IndexInfo).filter(
+            return session.query(IndexInfo).filter(
                 IndexInfo.index_code == index_code,
                 IndexInfo.del_flag == '1'
             ).first()
         except Exception as e:
             logger.error(f"获取指数 {index_code} 信息失败: {e}")
             return None
+        finally:
+            session.close()
 
     def get_index_by_code_and_date(self, index_code: str, trade_date: date) -> Optional[IndexInfo]:
+        session = self.get_session()
         try:
-            return self.session.query(IndexInfo).filter(
+            return session.query(IndexInfo).filter(
                 IndexInfo.index_code == index_code,
                 IndexInfo.trade_date == trade_date,
                 IndexInfo.del_flag == '1'
@@ -87,18 +94,24 @@ class IndexInfoStorage:
         except Exception as e:
             logger.error(f"获取指数 {index_code} 在 {trade_date} 的数据失败: {e}")
             return None
+        finally:
+            session.close()
 
     def get_latest_index_info(self, index_code: str) -> Optional[IndexInfo]:
+        session = self.get_session()
         try:
-            return self.session.query(IndexInfo).filter(
+            return session.query(IndexInfo).filter(
                 IndexInfo.index_code == index_code,
                 IndexInfo.del_flag == '1'
             ).order_by(IndexInfo.trade_date.desc()).first()
         except Exception as e:
             logger.error(f"获取指数 {index_code} 最新数据失败: {e}")
             return None
+        finally:
+            session.close()
 
     def create_or_update_index_info(self, index_data: Dict[str, Any]) -> bool:
+        session = self.get_session()
         try:
             index_code = index_data.get('index_code')
             trade_date = index_data.get('trade_date')
@@ -106,7 +119,11 @@ class IndexInfoStorage:
             if isinstance(trade_date, str):
                 trade_date = datetime.strptime(trade_date, '%Y-%m-%d').date()
 
-            existing = self.get_index_by_code_and_date(index_code, trade_date)
+            existing = session.query(IndexInfo).filter(
+                IndexInfo.index_code == index_code,
+                IndexInfo.trade_date == trade_date,
+                IndexInfo.del_flag == '1'
+            ).first()
 
             if existing:
                 existing.open_price = index_data.get('open_price', existing.open_price)
@@ -143,16 +160,18 @@ class IndexInfoStorage:
                     create_by='crawler',
                     create_time=get_beijing_now()
                 )
-                self.session.add(new_index)
+                session.add(new_index)
                 logger.info(f"指数 {index_code} 在 {trade_date} 的数据已创建")
 
-            self.session.commit()
+            session.commit()
             return True
 
         except Exception as e:
-            self.session.rollback()
+            session.rollback()
             logger.error(f"创建/更新指数信息失败: {e}")
             return False
+        finally:
+            session.close()
 
     def batch_create_or_update_index_info(self, index_data_list: List[Dict[str, Any]]) -> Dict[str, int]:
         success_count = 0
@@ -166,6 +185,4 @@ class IndexInfoStorage:
 
         return {'success': success_count, 'failed': fail_count}
 
-    def close(self):
-        if self.session:
-            self.session.close()
+

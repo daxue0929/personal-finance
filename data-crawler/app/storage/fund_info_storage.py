@@ -52,29 +52,40 @@ class FundInfoStorage:
         return self.Session()
 
     def get_all_fund_codes(self) -> List[str]:
+        session = self.get_session()
         try:
-            fund_codes = self.session.query(FundInfo.fund_code).filter(
+            fund_codes = session.query(FundInfo.fund_code).filter(
                 FundInfo.del_flag == '1'
             ).all()
             return [code[0] for code in fund_codes]
         except Exception as e:
             logger.error(f"获取基金代码列表失败: {e}")
             return []
+        finally:
+            session.close()
 
     def get_fund_by_code(self, fund_code: str) -> Optional[FundInfo]:
+        session = self.get_session()
         try:
-            return self.session.query(FundInfo).filter(
+            return session.query(FundInfo).filter(
                 FundInfo.fund_code == fund_code,
                 FundInfo.del_flag == '1'
             ).first()
         except Exception as e:
             logger.error(f"获取基金 {fund_code} 信息失败: {e}")
             return None
+        finally:
+            session.close()
 
     def update_fund_net_value(self, fund_code: str, net_asset_value: float,
                              net_value_date: str) -> bool:
+        session = self.get_session()
         try:
-            fund = self.get_fund_by_code(fund_code)
+            fund = session.query(FundInfo).filter(
+                FundInfo.fund_code == fund_code,
+                FundInfo.del_flag == '1'
+            ).first()
+            
             if not fund:
                 logger.warning(f"基金 {fund_code} 不存在，跳过更新")
                 return False
@@ -84,14 +95,16 @@ class FundInfoStorage:
             fund.update_time = get_beijing_now()
             fund.update_by = 'crawler'
 
-            self.session.commit()
+            session.commit()
             logger.info(f"基金 {fund_code} 净值已更新: {net_asset_value} ({net_value_date})")
             return True
 
         except Exception as e:
-            self.session.rollback()
+            session.rollback()
             logger.error(f"更新基金 {fund_code} 净值失败: {e}")
             return False
+        finally:
+            session.close()
 
     def batch_update_fund_net_values(self, fund_data_list: List[Dict[str, Any]]) -> Dict[str, int]:
         success_count = 0
@@ -171,8 +184,13 @@ class FundInfoStorage:
             session.close()
 
     def update_fund_remark(self, fund_code: str, remark: str) -> bool:
+        session = self.get_session()
         try:
-            fund = self.get_fund_by_code(fund_code)
+            fund = session.query(FundInfo).filter(
+                FundInfo.fund_code == fund_code,
+                FundInfo.del_flag == '1'
+            ).first()
+            
             if not fund:
                 logger.warning(f"基金 {fund_code} 不存在，跳过更新")
                 return False
@@ -181,15 +199,15 @@ class FundInfoStorage:
             fund.update_time = get_beijing_now()
             fund.update_by = 'crawler'
 
-            self.session.commit()
+            session.commit()
             logger.info(f"基金 {fund_code} remark 已更新: {remark}")
             return True
 
         except Exception as e:
-            self.session.rollback()
+            session.rollback()
             logger.error(f"更新基金 {fund_code} remark 失败: {e}")
             return False
+        finally:
+            session.close()
 
-    def close(self):
-        if self.session:
-            self.session.close()
+
