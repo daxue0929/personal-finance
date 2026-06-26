@@ -214,7 +214,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled, Download } from '@element-plus/icons-vue'
-import { buyerApi, fundApi } from '@/api'
+import { buyerApi, fundApi, taskApi } from '@/api'
 
 const buyers = ref([])
 const funds = ref([])
@@ -398,12 +398,8 @@ const exportData = () => {
 const refreshShares = async () => {
   refreshing.value = true
   try {
-    await fetch('/api/task/run/calculate_buyer_shares_task', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    })
+    await taskApi.runTask('calculate_buyer_shares_task')
     ElMessage.success('份额刷新已触发，请稍后刷新页面查看结果')
-    // 延迟刷新列表
     setTimeout(() => {
       fetchBuyers()
     }, 2000)
