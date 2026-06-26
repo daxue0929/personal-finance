@@ -68,7 +68,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="trace_id" label="TraceID" width="140">
+          <el-table-column prop="trace_id" label="TraceID" width="160">
             <template #default="{ row }">
               <span
                 v-if="row.trace_id"
@@ -81,7 +81,7 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column prop="request_method" label="方法" width="80" />
+          <el-table-column prop="request_method" label="方法" width="120" />
           <el-table-column prop="request_path" label="路径" width="200" />
           <el-table-column prop="request_ip" label="IP" width="120" />
           <el-table-column prop="task_name" label="任务" width="120" />

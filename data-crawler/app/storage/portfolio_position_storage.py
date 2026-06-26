@@ -16,7 +16,7 @@ from ..utils.config import get_db_url
 from ..utils.db import get_db_session, get_db_engine
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
-from .base import Base
+from .base import Base, StorageBase
 
 
 class PortfolioPosition(Base):
@@ -33,7 +33,7 @@ class PortfolioPosition(Base):
     remark = Column(String(500))
 
 
-class PortfolioPositionStorage:
+class PortfolioPositionStorage(StorageBase):
     """持仓组合和持仓关联数据存储层"""
 
     def __init__(self):

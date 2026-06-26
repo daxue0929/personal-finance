@@ -16,7 +16,7 @@ from ..utils.config import get_db_url
 from ..utils.db import get_db_session, get_db_engine
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
-from .base import Base
+from .base import Base, StorageBase
 
 
 class FundBuyer(Base):
@@ -39,7 +39,7 @@ class FundBuyer(Base):
     shares = Column(DECIMAL(15, 4), default=None)
 
 
-class FundBuyerStorage:
+class FundBuyerStorage(StorageBase):
     """基金买入流水数据存储层"""
 
     def __init__(self):
@@ -188,6 +188,7 @@ class FundBuyerStorage:
         """
         session = self.get_session()
         try:
+            logger.info(f"查询待处理买入记录")
             buyers = session.query(FundBuyer).filter(
                 FundBuyer.del_flag == '1',
                 FundBuyer.buy_status == 'PENDING'
@@ -207,6 +208,7 @@ class FundBuyerStorage:
                     'shares': float(buyer.shares) if buyer.shares else None,
                     'remark': buyer.remark
                 })
+            logger.info(f"查询到 {len(result)} 条待处理买入记录")
             return result
         finally:
             session.close()

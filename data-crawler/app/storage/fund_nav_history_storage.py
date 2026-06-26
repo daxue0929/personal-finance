@@ -1,12 +1,10 @@
 from sqlalchemy import Column, Integer, String, Date, DECIMAL, DateTime, text
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 
 from ..utils.config import get_db_url
 from ..utils.db import get_db_session, get_db_engine
-
-Base = declarative_base()
+from .base import Base, StorageBase
 
 
 class FundNavHistory(Base):
@@ -23,7 +21,7 @@ class FundNavHistory(Base):
     create_time = Column(DateTime, default=datetime.now, comment='创建时间')
 
 
-class FundNavHistoryStorage:
+class FundNavHistoryStorage(StorageBase):
     """基金历史净值存储类"""
 
     def __init__(self):

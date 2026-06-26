@@ -3,10 +3,48 @@ from apscheduler.triggers.cron import CronTrigger
 import threading
 import time
 import hashlib
+import uuid
 from datetime import datetime
 
 from ..storage import TaskScheduleStorage
 from ..utils.logger import logger
+from ..utils.logger import trace_id_var, request_method_var, request_path_var, category_var
+
+
+def run_with_trace_context(task_func, task_name, *args, **kwargs):
+    """
+    使用trace上下文执行任务的包装函数
+    为定时任务生成唯一的trace_id并设置到ContextVar中
+    """
+    trace_id = str(uuid.uuid4())
+    task_path = f'/scheduler/task/{task_name}'
+    
+    # 设置ContextVar上下文
+    tokens = []
+    try:
+        tokens.append(trace_id_var.set(trace_id))
+        tokens.append(request_method_var.set('SCHEDULER'))
+        tokens.append(request_path_var.set(task_path))
+        tokens.append(category_var.set('task'))
+        
+        logger.info(f"【定时任务开始】[TraceID:{trace_id}] 任务: {task_name}")
+        
+        # 执行任务
+        result = task_func(*args, **kwargs)
+        
+        logger.info(f"【定时任务完成】[TraceID:{trace_id}] 任务: {task_name}")
+        
+        return result
+    except Exception as e:
+        logger.error(f"【定时任务异常】[TraceID:{trace_id}] 任务: {task_name}, 错误: {str(e)}")
+        raise
+    finally:
+        # 清理ContextVar上下文
+        for token in reversed(tokens):
+            try:
+                token.var.reset(token)
+            except Exception:
+                pass
 
 
 class CronTaskScheduler:
@@ -59,8 +97,14 @@ class CronTaskScheduler:
 
     def _add_job(self, task):
         if task.task_func in self.task_registry:
-            self.scheduler.add_job(
+            # 使用包装函数执行任务，自动设置trace上下文
+            wrapped_func = lambda *args, **kwargs: run_with_trace_context(
                 self.task_registry[task.task_func],
+                task.task_name,
+                *args, **kwargs
+            )
+            self.scheduler.add_job(
+                wrapped_func,
                 CronTrigger.from_crontab(task.cron_expression),
                 id=task.task_func,
                 name=task.task_name
@@ -102,8 +146,11 @@ class CronTaskScheduler:
 
     def run_job_now(self, task_func_name, force_run: bool = False):
         if task_func_name in self.task_registry:
-            logger.info(f"立即执行任务: {task_func_name}, force_run={force_run}")
-            self.task_registry[task_func_name](force_run=force_run)
+            task_func = self.task_registry[task_func_name]
+            job = self.scheduler.get_job(task_func_name)
+            task_name = job.name if job else task_func_name
+            # 使用trace上下文执行任务
+            run_with_trace_context(task_func, task_name, force_run=force_run)
             return True
         return False
 

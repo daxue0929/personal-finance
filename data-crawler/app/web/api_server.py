@@ -7,7 +7,7 @@ import time
 import functools
 from sqlalchemy import text
 
-from ..utils.logger import logger
+from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
 from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition
 from ..utils.datetime_utils import get_beijing_now
 
@@ -48,61 +48,67 @@ def log_request(func):
         client_ip = request.remote_addr
         user_agent = request.headers.get('User-Agent', '')[:100]
         
-        log_extra = {
-            'trace_id': trace_id,
-            'request_method': method,
-            'request_path': path,
-            'request_ip': client_ip,
-            'category': 'api'
-        }
-        
-        logger.info(
-            f"【请求开始】[TraceID:{trace_id}] {method} {path} | IP: {client_ip} | 请求参数: {query_params} | 请求体: {body}",
-            extra=log_extra
-        )
-        
+        # 使用ContextVar设置上下文信息（保存token以便后续清理）
+        tokens = []
         try:
-            response = func(*args, **kwargs)
-            status_code = response[1] if isinstance(response, tuple) else 200
-            elapsed_time = (time.time() - start_time) * 1000
-            
-            # 将TraceID添加到响应头
-            if isinstance(response, tuple):
-                response_data, status = response
-                if isinstance(response_data, flask.Response):
-                    response_data.headers['X-Trace-ID'] = trace_id
-                else:
-                    # 创建新的响应对象
-                    response_data = flask.jsonify(response_data)
-                    response_data.headers['X-Trace-ID'] = trace_id
-                    response = (response_data, status)
-            else:
-                if isinstance(response, flask.Response):
-                    response.headers['X-Trace-ID'] = trace_id
-                else:
-                    response = flask.jsonify(response)
-                    response.headers['X-Trace-ID'] = trace_id
+            tokens.append(trace_id_var.set(trace_id))
+            tokens.append(request_method_var.set(method))
+            tokens.append(request_path_var.set(path))
+            tokens.append(request_ip_var.set(client_ip))
+            tokens.append(category_var.set('api'))
             
             logger.info(
-                f"【请求完成】[TraceID:{trace_id}] {method} {path} | 状态码: {status_code} | 耗时: {elapsed_time:.2f}ms",
-                extra=log_extra
+                f"【请求开始】[TraceID:{trace_id}] {method} {path} | IP: {client_ip} | 请求参数: {query_params} | 请求体: {body}"
             )
-            return response
-        except Exception as e:
-            elapsed_time = (time.time() - start_time) * 1000
-            log_extra['error_stack'] = traceback.format_exc()
-            logger.error(
-                f"【请求失败】[TraceID:{trace_id}] {method} {path} | 错误: {str(e)} | 耗时: {elapsed_time:.2f}ms",
-                extra=log_extra
-            )
-            raise
+            
+            try:
+                response = func(*args, **kwargs)
+                status_code = response[1] if isinstance(response, tuple) else 200
+                elapsed_time = (time.time() - start_time) * 1000
+                
+                # 将TraceID添加到响应头
+                if isinstance(response, tuple):
+                    response_data, status = response
+                    if isinstance(response_data, flask.Response):
+                        response_data.headers['X-Trace-ID'] = trace_id
+                    else:
+                        # 创建新的响应对象
+                        response_data = flask.jsonify(response_data)
+                        response_data.headers['X-Trace-ID'] = trace_id
+                        response = (response_data, status)
+                else:
+                    if isinstance(response, flask.Response):
+                        response.headers['X-Trace-ID'] = trace_id
+                    else:
+                        response = flask.jsonify(response)
+                        response.headers['X-Trace-ID'] = trace_id
+                
+                logger.info(
+                    f"【请求完成】[TraceID:{trace_id}] {method} {path} | 状态码: {status_code} | 耗时: {elapsed_time:.2f}ms"
+                )
+                return response
+            except Exception as e:
+                elapsed_time = (time.time() - start_time) * 1000
+                logger.error(
+                    f"【请求失败】[TraceID:{trace_id}] {method} {path} | 错误: {str(e)} | 耗时: {elapsed_time:.2f}ms",
+                    exc_info=True
+                )
+                raise
+        finally:
+            # 清理ContextVar上下文
+            for token in reversed(tokens):
+                try:
+                    token.var.reset(token)
+                except Exception:
+                    pass
     return wrapper
 
 
 def generate_trace_id():
     """生成唯一的TraceID"""
     import uuid
-    return str(uuid.uuid4())[:8] + '-' + str(int(time.time() * 1000))[-8:]
+    # 使用完整UUID确保唯一性
+    return str(uuid.uuid4())
 
 
 @app.route('/api/crawl', methods=['POST'])

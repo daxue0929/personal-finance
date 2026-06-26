@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from ..utils.db import get_db_session, get_db_engine
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
-from .base import Base
+from .base import Base, StorageBase
 
 
 class SystemLog(Base):
@@ -23,16 +23,18 @@ class SystemLog(Base):
     level = Column(String(20), nullable=False)
     category = Column(String(50), default='')
     message = Column(Text, nullable=False)
-    trace_id = Column(String(32), default='')
+    trace_id = Column(String(64), default='')
     request_method = Column(String(10), default='')
     request_path = Column(String(255), default='')
     request_ip = Column(String(45), default='')
     task_name = Column(String(100), default='')
+    storage_class = Column(String(100), default='')
+    storage_method = Column(String(100), default='')
     error_stack = Column(Text, default='')
     create_time = Column(DateTime)
 
 
-class SystemLogStorage:
+class SystemLogStorage(StorageBase):
     """系统日志数据存储层"""
 
     def __init__(self):
@@ -56,6 +58,8 @@ class SystemLogStorage:
                 request_path=data.get('request_path', ''),
                 request_ip=data.get('request_ip', ''),
                 task_name=data.get('task_name', ''),
+                storage_class=data.get('storage_class', ''),
+                storage_method=data.get('storage_method', ''),
                 error_stack=data.get('error_stack', ''),
                 create_time=data.get('create_time', get_beijing_now())
             )
@@ -86,6 +90,8 @@ class SystemLogStorage:
                         request_path=data.get('request_path', ''),
                         request_ip=data.get('request_ip', ''),
                         task_name=data.get('task_name', ''),
+                        storage_class=data.get('storage_class', ''),
+                        storage_method=data.get('storage_method', ''),
                         error_stack=data.get('error_stack', ''),
                         create_time=data.get('create_time', get_beijing_now())
                     )
@@ -112,7 +118,7 @@ class SystemLogStorage:
         """
         session = self.get_session()
         try:
-            query = session.query(SystemLog).order_by(SystemLog.create_time.desc())
+            query = session.query(SystemLog).order_by(SystemLog.create_time.desc(), SystemLog.id.desc())
             
             if level:
                 query = query.filter(SystemLog.level == level)
