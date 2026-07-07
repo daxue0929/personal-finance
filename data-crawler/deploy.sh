@@ -70,7 +70,7 @@ echo "[2/3] 构建应用镜像 (版本: ${FULL_VERSION})..."
 docker build -t fund-crawler:${FULL_VERSION} -t fund-crawler:latest .
 
 echo "[3/3] 启动服务..."
-docker-compose up -d --force-recreate
+docker-compose up -d --force-recreate --remove-orphans
 
 echo ""
 echo "=========================================="
