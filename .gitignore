@@ -64,3 +64,6 @@ frontend/.vite/
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code (local agent state — not for version control)
+.claude/
