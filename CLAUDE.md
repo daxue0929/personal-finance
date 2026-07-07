@@ -86,9 +86,19 @@ MySQL 外部实例。表结构在 `sql/struct/`，存储过程在 `sql/program/`
 
 ### 工作流程
 
-- **功能开发**：遵守 `/feature-dev:feature-dev` 模式。按 Discovery → 代码库探索 → 澄清问题 → 架构设计 → 实现 → 质量审查 → 总结 的流程推进，不得跳过澄清问题和用户批准环节。
+- **功能开发**：遵守 `/feature-dev` 模式。按 Discovery → 代码库探索 → 澄清问题 → 架构设计 → 实现 → 质量审查 → 总结 的流程推进，不得跳过澄清问题和用户批准环节。
 - **测试先行**：遵守 TDD（测试驱动开发）。先写测试用例（明确预期行为和边界），再写实现代码，最后跑通测试。禁止"先实现后补测试"。
 - 禁止未经用户确认就进入实现阶段。
+
+### Feature Development 强制子流程
+
+执行 `/feature-dev` 时，附加以下强制步骤：
+
+1. **PRD 生成**（Discovery 阶段）：必须先调用 `/create-prd` 输出结构化需求文档，明确功能目标、用户故事、验收标准。
+2. **设计规范**（Architecture Design 阶段）：若涉及前端界面，必须先调用 `/frontend-design` 输出 `DESIGN.md`，包含色彩、字体、组件规范。
+3. **质量门禁**（Quality Review 阶段）：必须重点检查实现是否符合 `DESIGN.md` 规范，不符合则返工。
+
+可用相关技能：`/create-prd`、`/generate-tasks`、`/implement-tasks`、`/frontend-design`。
 
 ### 命名约定
 
