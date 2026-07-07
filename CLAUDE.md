@@ -82,14 +82,55 @@ MySQL 外部实例。表结构在 `sql/struct/`，存储过程在 `sql/program/`
 - **前端**：Vue 3.4、Vite 5、Element Plus 2.5、ECharts 5.5、Vue Router 4、Axios
 - **数据库**：MySQL（8 张表：fund_info / fund_nav_history / fund_buyer / position / portfolio / portfolio_position / index_info / task_schedule / system_log）
 
-## 编码约定
+## 开发规范
 
-- 后端日志用 `app.utils.logger`，通过 ContextVar 注入 `trace_id` 实现全链路追踪。API 用 `@log_request` 装饰器，定时任务用 `run_with_trace_context` 包装。
-- Storage 类继承 `StorageBase`，`__init_subclass__` 自动给公共方法加日志装饰器。
-- 调度器每 60 秒检查 `task_schedule` 表，通过 hash 比对检测配置变更并热加载。
-- 软删除统一用 `del_flag='1'`（'1' 存在，'0' 已删除）。
+### 工作流程
+
+- **功能开发**：遵守 `/feature-dev:feature-dev` 模式。按 Discovery → 代码库探索 → 澄清问题 → 架构设计 → 实现 → 质量审查 → 总结 的流程推进，不得跳过澄清问题和用户批准环节。
+- **测试先行**：遵守 TDD（测试驱动开发）。先写测试用例（明确预期行为和边界），再写实现代码，最后跑通测试。禁止"先实现后补测试"。
+- 禁止未经用户确认就进入实现阶段。
+
+### 命名约定
+
+- **Python**：模块/变量用 `snake_case`，类用 `PascalCase`。Storage 类命名 `XxxStorage`，Task 函数命名 `xxx_task`。
+- **Vue/JS**：组件文件用 `PascalCase`（如 `FundBuyer.vue`），变量/函数用 `camelCase`。API 对象命名 `xxxApi`（如 `fundApi`）。
+- **数据库**：表名/字段名用 `snake_case`。布尔语义字段用 `del_flag`（'1' 存在，'0' 删除）、`enabled`（1/0）。
+- **接口路径**：RESTful 风格，复数资源名（`/api/funds`、`/api/buyers`），统一返回 JSON。
+
+### Python 后端规范
+
+- 日志统一用 `app.utils.logger.logger`，通过 ContextVar 注入 `trace_id` 全链路追踪。API 用 `@log_request` 装饰器，定时任务用 `run_with_trace_context` 包装。
+- Storage 类继承 `StorageBase`，`__init_subclass__` 自动加日志装饰器。Storage 实例在模块级创建（如 `app/web/api_server.py` 顶部），进程内复用。
 - 时间统一用北京时间（`app.utils.datetime_utils.get_beijing_now`）。
-- 前端 API 集中在 `src/api/index.js`，按业务模块导出（taskApi / fundApi / buyerApi / fundNavApi / logApi / portfolioApi）。
+- 调度器每 60 秒检查 `task_schedule` 表，通过 hash 比对检测配置变更并热加载。
+- 新增定时任务：在 `app/task/` 实现函数 → 在 `app/task/register_task.py` 注册 → 在 `task_schedule` 表配置 cron。
+- 新增数据表：在 `sql/struct/` 建表脚本 → 在 `app/storage/` 新增 Storage 类 → 在 `app/storage/__init__.py` 导出。
+- 数据库变更用 `sql/alter/` 下的增量脚本，不直接修改 `struct/` 中的已发布脚本。
+- 配置通过 `.env` + `os.getenv`，不硬编码。`.env` 不提交敏感密码（当前是明文，待改 secrets）。
+
+### Vue 前端规范
+
+- API 调用集中在 `src/api/index.js`，按业务模块导出 API 对象，不直接在组件里写 axios。
+- 路由配置在 `src/router/index.js`，通过 `meta.sort` 控制菜单顺序，支持父子菜单。
+- 状态在各页面组件内用 `ref`/`reactive` 局部管理（未用 Pinia/Vuex）。
+- UI 用 Element Plus，图标通过 `iconMap` 映射路由。
+- API 请求 baseURL：开发 `/api`（Vite 代理），生产 `/prod-api`（Nginx 反代）。
+- **引入新依赖**：必须先检查与项目已有依赖的兼容关系（peerDependencies、版本冲突）。不使用最新版本，原则上使用倒数第二个稳定版；用户明确指定版本的除外。
+
+### Git 提交规范
+
+- 提交信息用中文，简洁描述"做什么"。
+- 格式：`<类型>：<简述>`，类型如 `服务拆分`、`前端bug修改`、`开发相关`，或直接描述改动。
+- 一个提交聚焦一个主题，不混合无关改动。
+- 前端 `dist/` 构建产物需提交到版本库（服务器 git pull 更新）。
+- **不要提交**：`.env` 敏感信息、`.claude/` 本地状态、`venv/`、`node_modules/`、`__pycache__/`。
+
+### 错误处理与日志
+
+- API 接口统一 try/except，异常返回 `{error: message}` + 适当 HTTP 状态码。
+- 爬虫任务异常不应中断调度器，由 `run_with_trace_context` 捕获并记录。
+- 日志级别：INFO 记录正常流程，ERROR 记录异常。避免在生产开 DEBUG 级别日志。
+- `system_log` 表支持 trace_id 链路查询，定位问题时优先用 trace_id 串联。
 
 ## 已知不足与演进方向
 
