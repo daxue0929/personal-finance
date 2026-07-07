@@ -12,6 +12,8 @@ services:
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-personal-finance}
       - SCHEDULER_INTERNAL_URL=http://scheduler:5001
+      - SECRET_KEY=${SECRET_KEY}
+      - FLASK_COOKIE_SECURE=${FLASK_COOKIE_SECURE:-false}
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro

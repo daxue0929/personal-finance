@@ -1,14 +1,15 @@
 import flask
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session, g
 import threading
 import traceback
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 import time
 import functools
+import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
 
@@ -21,6 +22,22 @@ _portfolio_storage = PortfolioStorage()
 _position_storage = PositionStorage()
 _portfolio_position_storage = PortfolioPositionStorage()
 _log_storage = None
+_user_storage = UserStorage()
+
+# 会话签名密钥（登录态 Cookie 鉴权依赖）。生产环境必须在 .env 设置 SECRET_KEY
+app.secret_key = os.getenv('SECRET_KEY')
+if not app.secret_key:
+    app.secret_key = 'dev-insecure-secret-change-me'
+    logger.warning("SECRET_KEY 未设置，使用不安全的开发默认值！生产环境必须在 .env 设置 SECRET_KEY。")
+
+# Cookie 安全配置
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_COOKIE_SECURE', 'false').lower() == 'true'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=60)
+# 关闭「每次响应都刷新 Cookie」：让登录时按用户 TTL 烘焙的 Cookie 保持原样直到自然过期，
+# 避免 app 级 permanent_session_lifetime 在多用户间交叉污染（默认 True 会使最后登录者的 TTL 覆盖所有人）
+app.config['SESSION_REFRESH_EACH_REQUEST'] = False
 
 
 def log_request(func):
@@ -104,6 +121,199 @@ def generate_trace_id():
     import uuid
     # 使用完整UUID确保唯一性
     return str(uuid.uuid4())
+
+
+# ==================== 鉴权与用户管理 ====================
+
+# 无需登录即可访问的路径
+_PUBLIC_PATHS = {'/api/login'}
+
+
+def _is_admin(user):
+    """判断是否管理员"""
+    return bool(user and user.get('role') == 'admin')
+
+
+def admin_required(func):
+    """管理员权限装饰器：非管理员返回 403。须置于 @log_request 之下。"""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if not _is_admin(getattr(g, 'user', None)):
+            return jsonify({'error': '无权限'}), 403
+        return func(*args, **kwargs)
+    return wrapper
+
+
+@app.before_request
+def require_auth():
+    """登录态校验：保护所有 /api/* 接口，放行 /api/login 与非 /api 路径。
+
+    web→scheduler 的转发是出站 HTTP（scheduler_proxy），不经过本钩子，不受影响。
+    scheduler 进程（5001）仅内部网络可达，不做鉴权。
+    """
+    if request.method == 'OPTIONS':
+        return None
+    # 非 /api 路径（如 /health、静态资源）不鉴权
+    if not request.path.startswith('/api/'):
+        return None
+    if request.path in _PUBLIC_PATHS:
+        return None
+
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '未登录或登录已过期'}), 401
+
+    # 每次请求复核用户状态：get_user_by_id 已排除已删除用户；
+    # 此处额外拦截「登录后被禁用」的用户，使其已建立会话立即失效
+    user = _user_storage.get_user_by_id(user_id)
+    if not user or not user.get('enabled'):
+        session.clear()
+        return jsonify({'error': '未登录或登录已过期'}), 401
+
+    g.user = user
+    return None
+
+
+@app.route('/api/login', methods=['POST'])
+@log_request
+def login():
+    """用户登录"""
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    if not username or not password:
+        return jsonify({'error': '请输入用户名和密码'}), 400
+
+    user = _user_storage.verify_user(username, password)
+    if not user:
+        logger.info(f"登录失败: username={username}")
+        return jsonify({'error': '用户名或密码错误'}), 401
+
+    session.clear()
+    session['user_id'] = user['id']
+    session.permanent = True
+    # 按用户配置的会话时长烘焙 Cookie。配合 SESSION_REFRESH_EACH_REQUEST=False，
+    # 该 Cookie 保持此 TTL 直到自然过期（绝对时长，自登录起算）。
+    app.permanent_session_lifetime = timedelta(
+        minutes=user.get('session_ttl_minutes') or 60
+    )
+    logger.info(f"用户登录成功: {username} (id={user['id']})")
+    return jsonify({'success': True, 'user': user}), 200
+
+
+@app.route('/api/logout', methods=['POST'])
+@log_request
+def logout():
+    """退出登录"""
+    user = getattr(g, 'user', None)
+    session.clear()
+    if user:
+        logger.info(f"用户退出登录: {user.get('username')} (id={user.get('id')})")
+    return jsonify({'success': True, 'message': '已退出登录'}), 200
+
+
+@app.route('/api/me', methods=['GET'])
+@log_request
+def get_me():
+    """获取当前登录用户信息"""
+    return jsonify({'user': getattr(g, 'user', None)}), 200
+
+
+@app.route('/api/users', methods=['GET'])
+@log_request
+@admin_required
+def get_users():
+    """获取用户列表（仅管理员，支持搜索与分页）"""
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+        username = request.args.get('username', '')
+        role = request.args.get('role', '')
+        enabled = request.args.get('enabled', '')
+
+        users, total = _user_storage.get_users_with_pagination(
+            username=username if username else None,
+            role=role if role else None,
+            enabled=enabled if enabled != '' else None,
+            page=page,
+            page_size=page_size
+        )
+        return jsonify({
+            'data': users,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }), 200
+    except Exception as e:
+        logger.error(f"获取用户列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/users', methods=['POST'])
+@log_request
+@admin_required
+def create_user():
+    """创建用户（仅管理员）"""
+    current = getattr(g, 'user', None)
+    try:
+        data = request.get_json(silent=True) or {}
+        username = (data.get('username') or '').strip()
+        password = data.get('password') or ''
+        if not username or not password:
+            return jsonify({'error': '用户名和密码为必填项'}), 400
+        data['username'] = username
+        data['create_by'] = current.get('username', 'api') if current else 'api'
+        user = _user_storage.create_user(data)
+        return jsonify({'success': True, 'message': '用户创建成功', 'id': user['id']}), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"创建用户失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@log_request
+@admin_required
+def update_user(user_id):
+    """更新用户（仅管理员，含防自锁）"""
+    current = getattr(g, 'user', None)
+    data = request.get_json(silent=True) or {}
+
+    # 防自锁：禁止对自己执行禁用或降级（覆盖 falsy 边界：False/0/""/None）
+    if current and user_id == current.get('id'):
+        if 'enabled' in data and not data['enabled']:
+            return jsonify({'error': '不可禁用当前登录用户'}), 403
+        if 'role' in data and data.get('role') != 'admin':
+            return jsonify({'error': '不可取消自身管理员权限'}), 403
+
+    try:
+        data['update_by'] = current.get('username', 'api') if current else 'api'
+        ok = _user_storage.update_user(user_id, data)
+        if not ok:
+            return jsonify({'error': '用户不存在'}), 404
+        return jsonify({'success': True, 'message': '用户更新成功'}), 200
+    except Exception as e:
+        logger.error(f"更新用户 {user_id} 失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@log_request
+@admin_required
+def delete_user(user_id):
+    """删除用户（仅管理员，不可删除自己）"""
+    current = getattr(g, 'user', None)
+    if current and user_id == current.get('id'):
+        return jsonify({'error': '不可删除当前登录用户'}), 403
+    try:
+        ok = _user_storage.delete_user(user_id)
+        if not ok:
+            return jsonify({'error': '用户不存在'}), 404
+        return jsonify({'success': True, 'message': '用户删除成功'}), 200
+    except Exception as e:
+        logger.error(f"删除用户 {user_id} 失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/crawl', methods=['POST'])

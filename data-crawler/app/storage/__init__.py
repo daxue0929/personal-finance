@@ -7,6 +7,7 @@ from .portfolio_storage import Portfolio, PortfolioStorage
 from .position_storage import Position, PositionStorage
 from .portfolio_position_storage import PortfolioPosition, PortfolioPositionStorage
 from .system_log_storage import SystemLog, SystemLogStorage
+from .user_storage import User, UserStorage
 
 __all__ = [
     'FundInfo', 'FundInfoStorage',
@@ -17,5 +18,6 @@ __all__ = [
     'Portfolio', 'PortfolioStorage',
     'Position', 'PositionStorage',
     'PortfolioPosition', 'PortfolioPositionStorage',
-    'SystemLog', 'SystemLogStorage'
+    'SystemLog', 'SystemLogStorage',
+    'User', 'UserStorage'
 ]
