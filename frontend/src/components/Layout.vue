@@ -46,6 +46,13 @@
         <div style="font-size: 16px; font-weight: 500;">
           {{ currentTitle }}
         </div>
+        <div v-if="auth.user" style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 14px; color: #303133;">{{ auth.user.display_name || auth.user.username }}</span>
+          <el-tag size="small" :type="isAdmin() ? 'warning' : 'info'">
+            {{ isAdmin() ? '管理员' : '普通用户' }}
+          </el-tag>
+          <el-button link class="logout-btn" @click="handleLogout">退出登录</el-button>
+        </div>
       </el-header>
 
       <el-main style="background-color: #f5f5f5; padding: 0;">
@@ -58,22 +65,31 @@
 <script setup>
 import { computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Setting, Wallet, ShoppingCart, TrendCharts, Folder, Monitor } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Setting, Wallet, ShoppingCart, TrendCharts, Folder, Monitor, User } from '@element-plus/icons-vue'
+import { authApi } from '@/api'
+import { auth, isAdmin, clearAuthUser } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 
+// 是否对当前用户可见（管理员专属项对普通用户隐藏）
+const visible = (r) => !(r.meta?.adminOnly && !isAdmin())
+
 // 获取路由列表并按sort排序
+// 注意：菜单取自 Layout 父路由（根路径 '/'）的 children，而非 routes[0]——
+// 登录页等独立全屏路由可能排在 Layout 之前，按下标取会取错。
 const menuItems = computed(() => {
-  const routes = router.options.routes[0]?.children || []
+  const layoutRoute = router.options.routes.find(r => r.path === '/' && r.children)
+  const routes = layoutRoute?.children || []
   return routes
-    .filter(r => r.path && r.meta?.title)
+    .filter(r => r.path && r.meta?.title && visible(r))
     .sort((a, b) => (a.meta?.sort || 0) - (b.meta?.sort || 0))
 })
 
 const getChildrenMenu = (menu) => {
   return (menu.children || [])
-    .filter(r => r.path && r.meta?.title)
+    .filter(r => r.path && r.meta?.title && visible(r))
     .sort((a, b) => (a.meta?.sort || 0) - (b.meta?.sort || 0))
 }
 
@@ -94,16 +110,34 @@ const iconMap = {
   '/tasks': Setting,
   '/system': Monitor,
   '/system/logs': Monitor,
-  '/system/tasks': Setting
+  '/system/tasks': Setting,
+  '/system/users': User
 }
 
 const getIconComponent = (path) => {
   return iconMap[path] || Folder
+}
+
+// 退出登录
+const handleLogout = async () => {
+  try {
+    await authApi.logout()
+  } catch (e) {
+    // 即使后端 401 也继续清除本地状态
+  }
+  clearAuthUser()
+  ElMessage.info('已退出登录')
+  router.push('/login')
 }
 </script>
 
 <style scoped>
 .el-header {
   padding: 0 20px;
+}
+/* 退出登录：基色 ink-2，悬停变 danger（DESIGN §4.3） */
+.logout-btn {
+  --el-button-text-color: #606262;
+  --el-button-hover-text-color: #f56c6c;
 }
 </style>

@@ -6,12 +6,23 @@ import FundBuyer from '@/views/FundBuyer.vue'
 import FundNavHistory from '@/views/FundNavHistory.vue'
 import PortfolioBoard from '@/views/PortfolioBoard.vue'
 import SystemLog from '@/views/SystemLog.vue'
+import UserManage from '@/views/UserManage.vue'
+
+import { auth, whenReady } from '@/stores/auth'
 
 const routes = [
+  {
+    // 登录页：独立全屏路由，不套 Layout
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: { public: true, title: '登录' }
+  },
   {
     path: '/',
     component: Layout,
     redirect: '/portfolio',
+    meta: { requiresAuth: true },
     children: [
       {
         path: '/portfolio',
@@ -53,6 +64,12 @@ const routes = [
             name: 'TaskManage',
             component: TaskManage,
             meta: { title: '任务配置管理', sort: 52, parentTitle: '系统管理' }
+          },
+          {
+            path: '/system/users',
+            name: 'UserManage',
+            component: UserManage,
+            meta: { title: '用户管理', sort: 53, parentTitle: '系统管理', adminOnly: true }
           }
         ]
       }
@@ -63,6 +80,34 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// 路由守卫：未登录重定向到登录页。
+// Cookie 鉴权模式下前端不持有 token，故等待 App.vue 的 /api/me 探测完成后再判断，
+// 避免已登录用户刷新时被闪到登录页。
+router.beforeEach(async (to) => {
+  if (to.meta.public) {
+    // 已登录用户访问登录页 → 跳首页
+    await whenReady()
+    if (to.name === 'Login' && auth.user) {
+      return { path: '/' }
+    }
+    return true
+  }
+
+  await whenReady()
+
+  // 需鉴权但未登录 → 登录页（带 redirect）
+  if (to.matched.some(r => r.meta.requiresAuth) && !auth.user) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
+  // 非管理员访问管理员专属页 → 回首页
+  if (to.meta.adminOnly && auth.user?.role !== 'admin') {
+    return { path: '/' }
+  }
+
+  return true
 })
 
 export default router

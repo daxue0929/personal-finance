@@ -1,4 +1,8 @@
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
+
+import router from '@/router'
+import { clearAuthUser } from '@/stores/auth'
 
 // 根据环境选择不同的 baseURL
 const baseURL = import.meta.env.PROD ? '/prod-api' : '/api'
@@ -13,7 +17,7 @@ const retry = async (fn, retries = 2, delay = 1000) => {
   try {
     return await fn()
   } catch (error) {
-    if (retries > 0 && (error.code === 'ECONNABORTED' || 
+    if (retries > 0 && (error.code === 'ECONNABORTED' ||
         (error.response && error.response.status >= 500))) {
       await new Promise(resolve => setTimeout(resolve, delay))
       return retry(fn, retries - 1, delay * 2)
@@ -23,25 +27,56 @@ const retry = async (fn, retries = 2, delay = 1000) => {
 }
 
 // 请求拦截器
+// Cookie 鉴权模式：HttpOnly Cookie 由浏览器自动随请求携带，无需手动注入 Authorization 头。
+// 同源（dev Vite 代理 / prod Nginx 反代）下 withCredentials 默认即可。
 api.interceptors.request.use(
-  config => {
-    return config
-  },
-  error => {
-    return Promise.reject(error)
-  }
+  config => config,
+  error => Promise.reject(error)
 )
 
 // 响应拦截器
 api.interceptors.response.use(
-  response => {
-    return response.data
-  },
+  response => response.data,
   error => {
-    // 不在这里显示错误消息，由调用方自行处理
+    // 401：登录态失效。清状态 + 跳登录页 + 提示。
+    // _skipAuthHandler：部分请求（如 /api/me 探测、/api/logout）自行处理 401，不在此兜底
+    const skip = error.config && error.config._skipAuthHandler
+    if (error.response && error.response.status === 401 && !skip) {
+      clearAuthUser()
+      ElMessage.error('登录已过期，请重新登录')
+      const current = router.currentRoute.value
+      if (current.path !== '/login') {
+        router.push({ path: '/login', query: { redirect: current.fullPath } })
+      }
+    }
     return Promise.reject(error)
   }
 )
+
+// 鉴权相关API
+export const authApi = {
+  // 登录（跳过 401 兜底：登录失败由 Login.vue 自行展示错误，避免「登录已过期」误导）
+  login: (data) => api.post('/login', data, { _skipAuthHandler: true }),
+  // 退出登录（跳过 401 兜底，自行处理）
+  logout: () => api.post('/logout', {}, { _skipAuthHandler: true }),
+  // 获取当前登录用户（首次探测；跳过 401 兜底，由路由守卫/App.vue 处理）
+  me: () => api.get('/me', { _skipAuthHandler: true })
+}
+
+// 用户管理相关API（仅管理员）
+export const userApi = {
+  // 获取用户列表（支持搜索和分页）
+  getUsers: (params) => api.get('/users', { params }),
+
+  // 创建用户
+  createUser: (data) => api.post('/users', data),
+
+  // 更新用户
+  updateUser: (id, data) => api.put(`/users/${id}`, data),
+
+  // 删除用户
+  deleteUser: (id) => api.delete(`/users/${id}`)
+}
 
 // 任务配置相关API
 export const taskApi = {
@@ -132,40 +167,40 @@ export const logApi = {
 export const portfolioApi = {
   // 获取组合列表（支持搜索和分页，不包含持仓）
   getPortfolios: async (params) => retry(() => api.get('/portfolios', { params })),
-  
+
   // 获取单个组合（包含持仓列表）
   getPortfolio: (id) => api.get(`/portfolios/${id}`),
-  
+
   // 获取组合的持仓列表
   getPortfolioPositions: (portfolioId) => api.get(`/portfolios/${portfolioId}/positions`),
-  
+
   // 创建组合
   createPortfolio: (data) => api.post('/portfolios', data),
-  
+
   // 更新组合
   updatePortfolio: (id, data) => api.put(`/portfolios/${id}`, data),
-  
+
   // 删除组合
   deletePortfolio: (id) => api.delete(`/portfolios/${id}`),
-  
+
   // 获取持仓列表（支持搜索和分页）
   getPositions: (params) => api.get('/positions', { params }),
-  
+
   // 获取单个持仓
   getPosition: (id) => api.get(`/positions/${id}`),
-  
+
   // 创建持仓
   createPosition: (data) => api.post('/positions', data),
-  
+
   // 更新持仓
   updatePosition: (id, data) => api.put(`/positions/${id}`, data),
-  
+
   // 删除持仓
   deletePosition: (id) => api.delete(`/positions/${id}`),
-  
+
   // 创建组合持仓关联
   createPortfolioPosition: (data) => api.post('/portfolio-positions', data),
-  
+
   // 删除组合持仓关联
   deletePortfolioPosition: (id) => api.delete(`/portfolio-positions/${id}`)
 }
