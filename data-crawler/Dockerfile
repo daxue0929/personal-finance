@@ -13,6 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua
 
 COPY . .
 
-EXPOSE 5000
+# web 进程暴露 5000，scheduler 进程暴露 5001（由 docker-compose 指定 CMD）
+EXPOSE 5000 5001
 
-CMD ["python", "-m", "app.main", "--port", "5000"]
+# 默认入口由 docker-compose 通过 command 指定：
+#   web:        python -m app.web --port 5000
+#   scheduler:  python -m app.scheduler --port 5001

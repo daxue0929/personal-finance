@@ -1,10 +1,8 @@
 services:
-  fund-crawler:
+  web:
     image: fund-crawler:latest
-    container_name: fund-crawler
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+    container_name: fund-crawler-web
+    command: ["python", "-m", "app.web", "--port", "5000"]
     ports:
       - "5000:5000"
     environment:
@@ -13,6 +11,31 @@ services:
       - MYSQL_USER=${MYSQL_USER:-root}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-personal-finance}
+      - SCHEDULER_INTERNAL_URL=http://scheduler:5001
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    depends_on:
+      - scheduler
+    restart: unless-stopped
+    networks:
+      - fund-network
+
+  scheduler:
+    image: fund-crawler:latest
+    container_name: fund-crawler-scheduler
+    command: ["python", "-m", "app.scheduler", "--port", "5001"]
+    expose:
+      - "5001"
+    environment:
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
+      - MYSQL_USER=${MYSQL_USER:-root}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-personal-finance}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     restart: unless-stopped
     networks:
       - fund-network

@@ -1,3 +1,9 @@
-from .api_server import create_app, start_server, start_server_in_background, set_scheduler
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-__all__ = ['create_app', 'start_server', 'start_server_in_background', 'set_scheduler']
+from .api_server import create_app, start_server, start_server_in_background
+
+__all__ = ['create_app', 'start_server', 'start_server_in_background']

@@ -10,9 +10,9 @@ from sqlalchemy import text
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
 from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition
 from ..utils.datetime_utils import get_beijing_now
+from . import scheduler_proxy
 
 app = Flask(__name__)
-scheduler_instance = None
 _task_storage = TaskScheduleStorage()
 _fund_storage = FundInfoStorage()
 _buyer_storage = FundBuyerStorage()
@@ -21,11 +21,6 @@ _portfolio_storage = PortfolioStorage()
 _position_storage = PositionStorage()
 _portfolio_position_storage = PortfolioPositionStorage()
 _log_storage = None
-
-
-def set_scheduler(scheduler):
-    global scheduler_instance
-    scheduler_instance = scheduler
 
 
 def log_request(func):
@@ -114,14 +109,15 @@ def generate_trace_id():
 @app.route('/api/crawl', methods=['POST'])
 @log_request
 def trigger_crawl():
-    """触发基金净值爬取任务"""
-    return run_task('update_fund_net_values_task')
+    """触发基金净值爬取任务（转发到调度器进程）"""
+    data, code = scheduler_proxy.run_task('update_fund_net_values_task')
+    return jsonify(data), code
 
 
 @app.route('/api/task/run/<task_func>', methods=['POST'])
 @log_request
 def run_task(task_func):
-    """立即执行指定任务"""
+    """立即执行指定任务（转发到调度器进程）"""
     try:
         force_run = False
         try:
@@ -130,23 +126,8 @@ def run_task(task_func):
         except Exception:
             pass
 
-        if scheduler_instance:
-            success = scheduler_instance.run_job_now(task_func, force_run=force_run)
-            if success:
-                return jsonify({
-                    'success': True,
-                    'message': f'任务 {task_func} 已触发' + (' (force_run)' if force_run else '')
-                }), 200
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': f'任务 {task_func} 未注册'
-                }), 404
-        else:
-            return jsonify({
-                'success': False,
-                'message': '调度器未启动'
-            }), 503
+        data, code = scheduler_proxy.run_task(task_func, force_run=force_run)
+        return jsonify(data), code
     except Exception as e:
         logger.error(f"触发任务失败: {e}")
         return jsonify({
@@ -158,17 +139,9 @@ def run_task(task_func):
 @app.route('/api/status', methods=['GET'])
 @log_request
 def get_status():
-    """获取调度器状态"""
-    status = {
-        'running': False,
-        'message': '调度器未启动',
-        'jobs': []
-    }
-    if scheduler_instance:
-        status['running'] = scheduler_instance._running
-        status['message'] = '调度器运行中' if scheduler_instance._running else '调度器已停止'
-        status['jobs'] = scheduler_instance.get_all_jobs()
-    return jsonify(status), 200
+    """获取调度器状态（转发到调度器进程）"""
+    data, code = scheduler_proxy.get_status()
+    return jsonify(data), code
 
 
 @app.route('/api/tasks', methods=['GET'])
@@ -204,13 +177,16 @@ def get_tasks():
             
             # 获取总数
             total = query.count()
-            
+
             # 分页查询
             tasks = query.offset((page - 1) * page_size).limit(page_size).all()
-            
+
+            # 一次性从调度器进程获取所有任务状态（避免 N+1 HTTP 调用）
+            all_jobs = scheduler_proxy.get_all_jobs() or {}
+
             result = []
             for task in tasks:
-                job_status = scheduler_instance.get_job_status(task.task_func) if scheduler_instance else None
+                job_status = all_jobs.get(task.task_func)
                 result.append({
                     'id': task.id,
                     'task_name': task.task_name,
@@ -243,7 +219,7 @@ def get_task(task_id):
     try:
         task = _task_storage.get_task_by_id(task_id)
         if task:
-            job_status = scheduler_instance.get_job_status(task.task_func) if scheduler_instance else None
+            job_status = scheduler_proxy.get_job_status(task.task_func)
             result = {
                 'id': task.id,
                 'task_name': task.task_name,
@@ -354,19 +330,10 @@ def delete_task(task_id):
 @app.route('/api/start', methods=['POST'])
 @log_request
 def start_scheduler():
-    """启动调度器"""
+    """启动调度器（转发到调度器进程）"""
     try:
-        if scheduler_instance:
-            scheduler_instance.start()
-            return jsonify({
-                'success': True,
-                'message': '调度器已启动'
-            }), 200
-        else:
-            return jsonify({
-                'success': False,
-                'message': '调度器未初始化'
-            }), 500
+        data, code = scheduler_proxy.start_scheduler()
+        return jsonify(data), code
     except Exception as e:
         logger.error(f"启动调度器失败: {e}")
         return jsonify({
@@ -378,19 +345,10 @@ def start_scheduler():
 @app.route('/api/stop', methods=['POST'])
 @log_request
 def stop_scheduler():
-    """停止调度器"""
+    """停止调度器（转发到调度器进程）"""
     try:
-        if scheduler_instance:
-            scheduler_instance.stop()
-            return jsonify({
-                'success': True,
-                'message': '调度器已停止'
-            }), 200
-        else:
-            return jsonify({
-                'success': False,
-                'message': '调度器未初始化'
-            }), 500
+        data, code = scheduler_proxy.stop_scheduler()
+        return jsonify(data), code
     except Exception as e:
         logger.error(f"停止调度器失败: {e}")
         return jsonify({
