@@ -52,6 +52,7 @@ yarn-error.log*
 frontend/.vite/
 
 # Environment files
+.env
 .env.local
 .env.*.local
 
@@ -67,3 +68,6 @@ frontend/.vite/
 
 # Claude Code (local agent state — not for version control)
 .claude/
+
+# MCP 配置（含本地数据库连接凭证，勿提交）
+.mcp.json
