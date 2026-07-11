@@ -66,7 +66,7 @@
 import { computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Setting, Wallet, ShoppingCart, TrendCharts, Folder, Monitor, User } from '@element-plus/icons-vue'
+import { Setting, Wallet, ShoppingCart, TrendCharts, Folder, Monitor, User, DataAnalysis, Document, DataLine } from '@element-plus/icons-vue'
 import { authApi } from '@/api'
 import { auth, isAdmin, clearAuthUser } from '@/stores/auth'
 
@@ -107,6 +107,9 @@ const iconMap = {
   '/buyers': ShoppingCart,
   '/funds': Wallet,
   '/funds/history': TrendCharts,
+  '/index': DataAnalysis,
+  '/index/info': Document,
+  '/index/analysis': DataLine,
   '/tasks': Setting,
   '/system': Monitor,
   '/system/logs': Monitor,

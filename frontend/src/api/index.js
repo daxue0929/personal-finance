@@ -204,3 +204,18 @@ export const portfolioApi = {
   // 删除组合持仓关联
   deletePortfolioPosition: (id) => api.delete(`/portfolio-positions/${id}`)
 }
+
+// 指数分析相关API
+export const indexApi = {
+  // 获取指数信息列表（支持搜索、日期范围、分页）
+  getIndexes: (params) => api.get('/indexes', { params }),
+
+  // 获取指数下拉选项
+  getOptions: () => api.get('/indexes/options'),
+
+  // 获取指数分析数据（概览+价格序列+均线+成交额+涨跌幅分布+月度收益+均线信号）
+  getAnalysis: (params) => api.get('/indexes/analysis', { params }),
+
+  // 定投模拟
+  getDca: (params) => api.get('/indexes/dca', { params })
+}

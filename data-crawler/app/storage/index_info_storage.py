@@ -110,6 +110,83 @@ class IndexInfoStorage(StorageBase):
         finally:
             session.close()
 
+    def get_all_indexes(self) -> List[Dict[str, Any]]:
+        """获取所有指数（去重，下拉选项用）：[{index_code, index_name, index_type}]"""
+        session = self.get_session()
+        try:
+            rows = session.query(
+                IndexInfo.index_code, IndexInfo.index_name, IndexInfo.index_type
+            ).filter(IndexInfo.del_flag == '1').distinct().all()
+            return [{'index_code': r[0], 'index_name': r[1], 'index_type': r[2]} for r in rows]
+        except Exception as e:
+            logger.error(f"获取指数列表失败: {e}")
+            return []
+        finally:
+            session.close()
+
+    def get_index_list_with_pagination(self, index_code=None, index_name=None,
+                                       index_type=None, start_date=None, end_date=None,
+                                       page=1, page_size=10):
+        """指数信息分页查询（列表页用）。返回 (list, total)，按日期降序。"""
+        session = self.get_session()
+        try:
+            query = session.query(IndexInfo).filter(IndexInfo.del_flag == '1')
+            if index_code:
+                query = query.filter(IndexInfo.index_code == index_code)
+            if index_name:
+                query = query.filter(IndexInfo.index_name.like(f'%{index_name}%'))
+            if index_type:
+                query = query.filter(IndexInfo.index_type == index_type)
+            if start_date:
+                query = query.filter(IndexInfo.trade_date >= start_date)
+            if end_date:
+                query = query.filter(IndexInfo.trade_date <= end_date)
+
+            total = query.count()
+            rows = query.order_by(IndexInfo.trade_date.desc()) \
+                        .offset((page - 1) * page_size).limit(page_size).all()
+            return [self._to_dict(r) for r in rows], total
+        finally:
+            session.close()
+
+    def get_index_history(self, index_code, start_date=None, end_date=None):
+        """获取某指数区间内全部日线（分析用，按日期升序）。"""
+        session = self.get_session()
+        try:
+            query = session.query(IndexInfo).filter(
+                IndexInfo.index_code == index_code,
+                IndexInfo.del_flag == '1'
+            )
+            if start_date:
+                query = query.filter(IndexInfo.trade_date >= start_date)
+            if end_date:
+                query = query.filter(IndexInfo.trade_date <= end_date)
+            rows = query.order_by(IndexInfo.trade_date.asc()).all()
+            return [self._to_dict(r) for r in rows]
+        finally:
+            session.close()
+
+    def _to_dict(self, row) -> Dict[str, Any]:
+        """行转字典（DECIMAL/Date 转 float/str，前端友好）"""
+        return {
+            'index_id': row.index_id,
+            'index_code': row.index_code,
+            'index_name': row.index_name,
+            'index_type': row.index_type,
+            'trade_date': str(row.trade_date) if row.trade_date else None,
+            'open_price': float(row.open_price) if row.open_price is not None else 0.0,
+            'close_price': float(row.close_price) if row.close_price is not None else 0.0,
+            'high_price': float(row.high_price) if row.high_price is not None else 0.0,
+            'low_price': float(row.low_price) if row.low_price is not None else 0.0,
+            'change_percent': float(row.change_percent) if row.change_percent is not None else 0.0,
+            'volume': int(row.volume) if row.volume is not None else 0,
+            'amount': float(row.amount) if row.amount is not None else 0.0,
+            'turnover_rate': float(row.turnover_rate) if row.turnover_rate is not None else 0.0,
+            'pe_ratio': float(row.pe_ratio) if row.pe_ratio is not None else 0.0,
+            'pe_percentile': float(row.pe_percentile) if row.pe_percentile is not None else 0.0,
+            'pb_ratio': float(row.pb_ratio) if row.pb_ratio is not None else 0.0,
+        }
+
     def create_or_update_index_info(self, index_data: Dict[str, Any]) -> bool:
         session = self.get_session()
         try:

@@ -9,7 +9,8 @@ import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage
+from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
 
@@ -23,6 +24,7 @@ _position_storage = PositionStorage()
 _portfolio_position_storage = PortfolioPositionStorage()
 _log_storage = None
 _user_storage = UserStorage()
+_index_storage = IndexInfoStorage()
 
 # 会话签名密钥（登录态 Cookie 鉴权依赖）。生产环境必须在 .env 设置 SECRET_KEY
 app.secret_key = os.getenv('SECRET_KEY')
@@ -1634,6 +1636,203 @@ def clean_logs():
         }), 200
     except Exception as e:
         logger.error(f"清理日志失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 指数分析接口 ====================
+
+@app.route('/api/indexes', methods=['GET'])
+@log_request
+def get_indexes():
+    """获取指数信息列表（支持搜索、日期范围、分页）"""
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+        index_code = request.args.get('index_code', '')
+        index_name = request.args.get('index_name', '')
+        index_type = request.args.get('index_type', '')
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+
+        data, total = _index_storage.get_index_list_with_pagination(
+            index_code=index_code if index_code else None,
+            index_name=index_name if index_name else None,
+            index_type=index_type if index_type else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None,
+            page=page, page_size=page_size
+        )
+        return jsonify({'data': data, 'total': total, 'page': page, 'page_size': page_size}), 200
+    except Exception as e:
+        logger.error(f"获取指数列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/indexes/options', methods=['GET'])
+@log_request
+def get_index_options():
+    """获取指数下拉选项（去重）"""
+    try:
+        data = _index_storage.get_all_indexes()
+        return jsonify({'data': data}), 200
+    except Exception as e:
+        logger.error(f"获取指数选项失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/indexes/analysis', methods=['GET'])
+@log_request
+def get_index_analysis():
+    """指数分析：概览 + 价格序列(含均线) + 涨跌幅分布 + 月度收益 + 均线信号"""
+    index_code = request.args.get('index_code', '')
+    if not index_code:
+        return jsonify({'error': '缺少参数 index_code'}), 400
+    try:
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+
+        # 均线预热：最大窗口 MA250，向前多取 400 日历日（≈285 交易日），
+        # 使展示区间内每个点的均线/布林带都有值，而非区间开头一大段 None。
+        warmup_start = None
+        if start_date:
+            warmup_start = (dt.strptime(start_date, '%Y-%m-%d') - timedelta(days=400)).strftime('%Y-%m-%d')
+
+        all_rows = _index_storage.get_index_history(
+            index_code=index_code,
+            start_date=warmup_start,
+            end_date=end_date if end_date else None
+        )
+        if not all_rows:
+            return jsonify({
+                'overview': {'count': 0, 'index_code': index_code},
+                'series': [], 'change_distribution': [],
+                'monthly_returns': [],
+                'ma_signal': {'ma60': None, 'ma60_diff_pct': None,
+                              'ma250': None, 'ma250_diff_pct': None,
+                              'suggestion': '区间无数据'},
+                'boll_signal': {'position': None, 'type': 'info',
+                                'bandwidth_percentile': None, 'suggestion': '区间无数据'}
+            }), 200
+
+        # 基于含预热的全部数据计算均线/布林带（需要历史前置）
+        all_closes = [r['close_price'] for r in all_rows]
+        ma5 = calc_moving_average(all_closes, 5)
+        ma20 = calc_moving_average(all_closes, 20)
+        ma60 = calc_moving_average(all_closes, 60)
+        ma250 = calc_moving_average(all_closes, 250)
+        boll_upper, boll_middle, boll_lower = calc_bollinger_bands(all_closes, 20, 2)
+
+        # 展示区间起始索引（预热部分不展示，仅用于均线计算）
+        if start_date:
+            start_idx = next((i for i, r in enumerate(all_rows) if r['trade_date'] >= start_date), 0)
+        else:
+            start_idx = 0
+        rows = all_rows[start_idx:]
+
+        dates = [r['trade_date'] for r in rows]
+        closes = [r['close_price'] for r in rows]
+        change_pcts = [r['change_percent'] for r in rows]
+        amounts = [r['amount'] for r in rows]
+
+        # series：区间内 K线 + 对应（含预热索引的）均线值
+        series = []
+        for j, r in enumerate(rows):
+            i = start_idx + j
+            series.append({
+                'date': r['trade_date'],
+                'open': r['open_price'], 'close': r['close_price'],
+                'high': r['high_price'], 'low': r['low_price'],
+                'change_percent': r['change_percent'],
+                'volume': r['volume'], 'amount': r['amount'],
+                'ma5': ma5[i], 'ma20': ma20[i], 'ma60': ma60[i], 'ma250': ma250[i],
+                'boll_upper': boll_upper[i], 'boll_middle': boll_middle[i], 'boll_lower': boll_lower[i],
+            })
+
+        latest = rows[-1]
+        first_close = rows[0]['close_price']
+        latest_close = latest['close_price']
+        high = max(r['high_price'] for r in rows)
+        low = min(r['low_price'] for r in rows)
+        days = len(rows)
+        overview = {
+            'index_code': index_code,
+            'index_name': latest.get('index_name'),
+            'latest_date': latest['trade_date'],
+            'latest_close': latest_close,
+            'start_date': rows[0]['trade_date'],
+            'end_date': latest['trade_date'],
+            'count': days,
+            'interval_change_pct': (latest_close / first_close - 1) * 100 if first_close else 0.0,
+            'high_price': high,
+            'low_price': low,
+            'amplitude': (high - low) / low * 100 if low else 0.0,
+            'annualized_volatility': calc_volatility(change_pcts),
+            'annualized_return': calc_annualized_return(first_close, latest_close, days),
+            'avg_amount': sum(amounts) / len(amounts) if amounts else 0.0,
+        }
+
+        # 均线信号用区间最后一天（= all_rows 最后一天）的 MA60/MA250
+        last_i = len(all_rows) - 1
+        # 布林带信号：最新日三轨 + 区间内带宽序列（用于带宽分位判断）
+        boll_bandwidths = []
+        for i in range(start_idx, len(all_rows)):
+            m, u, l = boll_middle[i], boll_upper[i], boll_lower[i]
+            if m is not None and m != 0 and u is not None and l is not None:
+                boll_bandwidths.append((u - l) / m * 100)
+            else:
+                boll_bandwidths.append(None)
+        boll_signal = calc_bollinger_signal(
+            latest_close, boll_upper[last_i], boll_middle[last_i], boll_lower[last_i],
+            boll_bandwidths
+        )
+        return jsonify({
+            'overview': overview,
+            'series': series,
+            'change_distribution': calc_change_distribution(change_pcts),
+            'monthly_returns': calc_monthly_returns(dates, closes),
+            'ma_signal': calc_ma_signal(latest_close, ma60[last_i], ma250[last_i]),
+            'boll_signal': boll_signal,
+        }), 200
+    except Exception as e:
+        logger.error(f"指数分析失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/indexes/dca', methods=['GET'])
+@log_request
+def get_index_dca():
+    """定投模拟（含一次性买入对比）"""
+    index_code = request.args.get('index_code', '')
+    if not index_code:
+        return jsonify({'error': '缺少参数 index_code'}), 400
+    frequency = request.args.get('frequency', 'monthly')
+    try:
+        amount = float(request.args.get('amount', 1000))
+    except ValueError:
+        return jsonify({'error': 'amount 必须为数字'}), 400
+    if frequency not in ('weekly', 'biweekly', 'monthly'):
+        return jsonify({'error': 'frequency 仅支持 weekly/biweekly/monthly'}), 400
+
+    try:
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        rows = _index_storage.get_index_history(
+            index_code=index_code,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None
+        )
+        dates = [r['trade_date'] for r in rows]
+        closes = [r['close_price'] for r in rows]
+        result = simulate_dca(dates, closes, frequency, amount)
+        result['index_code'] = index_code
+        result['frequency'] = frequency
+        result['amount'] = amount
+        result['latest_close'] = closes[-1] if closes else 0.0
+        return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"定投模拟失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

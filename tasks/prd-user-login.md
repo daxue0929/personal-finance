@@ -81,7 +81,7 @@
 
 - 登录页：居中卡片，品牌色，区别于主应用布局（独立全屏路由）。
 - 用户管理页：与现有 `/system` 页面视觉一致。
-- 详见 `DESIGN.md`（由 `/frontend-design` 产出）。
+- 详见 `design-user-login.md`（由 `/frontend-design` 产出）。
 
 ## 11. 技术考虑
 

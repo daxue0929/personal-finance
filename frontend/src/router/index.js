@@ -7,6 +7,8 @@ import FundNavHistory from '@/views/FundNavHistory.vue'
 import PortfolioBoard from '@/views/PortfolioBoard.vue'
 import SystemLog from '@/views/SystemLog.vue'
 import UserManage from '@/views/UserManage.vue'
+import IndexInfo from '@/views/IndexInfo.vue'
+import IndexAnalysis from '@/views/IndexAnalysis.vue'
 
 import { auth, whenReady } from '@/stores/auth'
 
@@ -47,6 +49,25 @@ const routes = [
         name: 'FundNavHistory',
         component: FundNavHistory,
         meta: { title: '基金历史净值', sort: 40 }
+      },
+      {
+        path: '/index',
+        name: 'Index',
+        meta: { title: '指数分析', sort: 45, isParent: true },
+        children: [
+          {
+            path: '/index/info',
+            name: 'IndexInfo',
+            component: IndexInfo,
+            meta: { title: '指数信息', sort: 46, parentTitle: '指数分析' }
+          },
+          {
+            path: '/index/analysis',
+            name: 'IndexAnalysis',
+            component: IndexAnalysis,
+            meta: { title: '指数分析', sort: 47, parentTitle: '指数分析' }
+          }
+        ]
       },
       {
         path: '/system',
