@@ -66,8 +66,11 @@ frontend/.vite/
 *.sln
 *.sw?
 
-# Claude Code (local agent state — not for version control)
-.claude/
+# Claude Code (local agent state - not for version control)
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # MCP 配置（含本地数据库连接凭证，勿提交）
 .mcp.json
+.claude/settings.local.json
