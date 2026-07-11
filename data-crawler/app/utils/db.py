@@ -45,21 +45,26 @@ class DatabaseManager:
             'charset': 'utf8mb4',
             'pool_size': int(os.getenv('DB_POOL_SIZE', '20')),
             'max_overflow': int(os.getenv('DB_MAX_OVERFLOW', '30')),
-            'pool_recycle': int(os.getenv('DB_POOL_RECYCLE', '3600')),
+            'pool_recycle': int(os.getenv('DB_POOL_RECYCLE', '300')),
             'pool_timeout': int(os.getenv('DB_POOL_TIMEOUT', '30')),
+            'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '5')),
         }
 
-        # 构建数据库URL
+        # 构建数据库URL（connect_timeout 让建连快速失败，避免卡到前端 axios 超时）
         encoded_password = quote(db_config['password'], safe='')
         db_url = (
             f"mysql+pymysql://{db_config['user']}:{encoded_password}"
             f"@{db_config['host']}:{db_config['port']}/{db_config['database']}"
             f"?charset={db_config['charset']}"
+            f"&connect_timeout={db_config['connect_timeout']}"
         )
 
         logger.info(f"初始化数据库连接: {db_config['host']}:{db_config['port']}")
 
         # 创建引擎，配置连接池
+        # pool_pre_ping：checkout 前先 ping，剔除失效连接（远程库网络抖动必备）
+        # pool_recycle=300：5 分钟主动回收空闲连接，降低拿到被网络层静默关闭的僵尸连接概率
+        #   （远程 MySQL wait_timeout=28800，recycle 远小于它，故失效主要来自网络层而非服务端）
         self._engine = create_engine(
             db_url,
             poolclass=QueuePool,
@@ -67,7 +72,8 @@ class DatabaseManager:
             max_overflow=db_config['max_overflow'],
             pool_recycle=db_config['pool_recycle'],
             pool_timeout=db_config['pool_timeout'],
-            pool_pre_ping=True,  # 连接前检查是否有效
+            pool_pre_ping=True,
+            pool_reset_on_return='rollback',
             echo=os.getenv('SQL_ECHO', 'false').lower() == 'true',
             echo_pool=True,
             pool_logging_name='personal_finance_pool'

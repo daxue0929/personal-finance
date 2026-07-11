@@ -11,7 +11,7 @@ import functools
 from sqlalchemy.orm import declarative_base
 from ..utils.logger import (
     set_log_context, reset_log_context,
-    category_var, storage_class_var, storage_method_var
+    category_var, storage_class_var, storage_method_var, logger
 )
 
 Base = declarative_base()
@@ -21,23 +21,32 @@ def storage_log(func):
     """
     存储类方法日志装饰器
     自动设置category='database'，并携带类名和方法名
+    对数据库 OperationalError（连接超时/断连）重试一次，规避远程库偶发网络抖动
     """
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
+        from sqlalchemy.exc import OperationalError
+
         class_name = self.__class__.__name__
         method_name = func.__name__
-        
+
         tokens = set_log_context(
             category='database',
             storage_class=class_name,
             storage_method=method_name
         )
-        
+
         try:
-            return func(self, *args, **kwargs)
+            try:
+                return func(self, *args, **kwargs)
+            except OperationalError as e:
+                # 连接级错误（2006/2003/2013 等）：连接池会自愈，重试一次
+                code = e.orig.args[0] if e.orig else '?'
+                logger.warning(f"数据库操作 {class_name}.{method_name} 失败(码{code})，重试一次")
+                return func(self, *args, **kwargs)
         finally:
             reset_log_context(tokens)
-    
+
     return wrapper
 
 
