@@ -47,8 +47,12 @@ REPORT_PATH = os.path.join(
 )
 
 
-def fetch_prices():
-    """从 index_info 取科创50收盘价, 按交易日升序。"""
+def fetch_prices(end_date=None):
+    """从 index_info 取科创50收盘价, 按交易日升序。
+
+    end_date: 可选, 仅取 trade_date <= end_date 的数据。用于排除当天盘中未确定的
+              收盘价(回测应基于已确定的交易日数据, 保证可复现)。
+    """
     conn = pymysql.connect(
         host=DB_CONFIG['host'], port=DB_CONFIG['port'],
         user=DB_CONFIG['user'], password=DB_CONFIG['password'],
@@ -56,12 +60,14 @@ def fetch_prices():
     )
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT trade_date, close_price FROM index_info "
-                "WHERE index_code=%s AND del_flag='1' "
-                "ORDER BY trade_date",
-                (INDEX_CODE,),
-            )
+            sql = ("SELECT trade_date, close_price FROM index_info "
+                   "WHERE index_code=%s AND del_flag='1'")
+            params = [INDEX_CODE]
+            if end_date is not None:
+                sql += " AND trade_date <= %s"
+                params.append(end_date)
+            sql += " ORDER BY trade_date"
+            cur.execute(sql, params)
             rows = cur.fetchall()
     finally:
         conn.close()

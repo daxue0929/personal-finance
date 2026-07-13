@@ -36,7 +36,17 @@
       "mcp__MySQL__get_table_sample",
       "Bash(python3 -c \"import pymysql; print\\('sys pymysql OK'\\)\")",
       "Bash(../data-crawler/venv/bin/python *)",
-      "Bash(/Users/wangxuedi/open_source/personal-finance/data-crawler/venv/bin/python *)"
+      "Bash(/Users/wangxuedi/open_source/personal-finance/data-crawler/venv/bin/python *)",
+      "mcp__mymcpJd__get_schema_info",
+      "mcp__mymcpJd__execute_sql",
+      "mcp__mymcpJd__get_table_sample",
+      "Bash(data-crawler/venv/bin/python -c \"import pytest; print\\('pytest', pytest.__version__\\)\")",
+      "Bash(data-crawler/venv/bin/pip list *)",
+      "Bash(python3 -c \"import pytest; print\\('pytest', pytest.__version__\\)\")",
+      "Bash(python3 -c \"import pymysql; print\\('pymysql ok'\\)\")",
+      "Bash(conda env *)",
+      "Bash(conda run *)",
+      "Bash(git check-ignore *)"
     ]
   },
   "enabledMcpjsonServers": [
