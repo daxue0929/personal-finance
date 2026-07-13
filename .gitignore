@@ -68,6 +68,7 @@ frontend/.vite/
 
 # Claude Code (local agent state - not for version control)
 .claude/*
+.claude/settings.json
 !.claude/skills/
 !.claude/skills/**
 
