@@ -189,6 +189,9 @@ export const portfolioApi = {
   // 获取单个持仓
   getPosition: (id) => api.get(`/positions/${id}`),
 
+  // 按基金代码查询已有持仓（添加持仓时带出）
+  getPositionByFund: (fundCode) => api.get('/positions/by-fund', { params: { fund_code: fundCode } }),
+
   // 创建持仓
   createPosition: (data) => api.post('/positions', data),
 
@@ -218,4 +221,13 @@ export const indexApi = {
 
   // 定投模拟
   getDca: (params) => api.get('/indexes/dca', { params })
+}
+
+// 持仓分析相关API
+export const positionAnalysisApi = {
+  // 获取有快照数据的可选持仓列表（分析页下拉）
+  getOptions: () => api.get('/positions/snapshot/options'),
+
+  // 获取持仓分析数据（概览+盈亏/市值序列+最大回撤+全部持仓占比饼图）
+  getAnalysis: (params) => api.get('/positions/snapshot/analysis', { params })
 }

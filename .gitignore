@@ -73,4 +73,5 @@ frontend/.vite/
 
 # MCP 配置（含本地数据库连接凭证，勿提交）
 .mcp.json
-.claude/settings.local.json
+
+.trae/mcp.json
