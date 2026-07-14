@@ -99,7 +99,7 @@
                           <el-icon><Edit /></el-icon>
                         </el-button>
                       </el-tooltip>
-                      <el-tooltip content="删除" placement="top">
+                      <el-tooltip content="从组合移除" placement="top">
                         <el-button size="small" circle type="danger" @click="deletePosition(position)">
                           <el-icon><Delete /></el-icon>
                         </el-button>
@@ -197,6 +197,8 @@ const positionDialogVisible = ref(false);
 const isEditPosition = ref(false);
 const editPositionId = ref(null);
 const currentPortfolioId = ref(null);
+// 已有持仓模式：添加持仓时若所选基金已有 position 记录，记下其 id，submit 时只创建关联而非新建持仓
+const existingPositionId = ref(null);
 const positionForm = ref({
  fund_code: '',
  fund_name: '',
@@ -324,13 +326,17 @@ const showAddPositionDialog = (portfolio) => {
  currentPortfolioId.value = portfolio.id;
  isEditPosition.value = false;
  editPositionId.value = null;
+ existingPositionId.value = null;
+ // 本地日期，避免 toISOString 在北京时间凌晨取到昨天
+ const d = new Date();
+ const todayLocal = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
  positionForm.value = {
  fund_code: '',
  fund_name: '',
  shares: 0,
  cost_price: 0,
  current_price: 0,
- buy_date: new Date().toISOString().split('T')[0]
+ buy_date: todayLocal
  };
  positionDialogVisible.value = true;
 };
@@ -361,14 +367,23 @@ const submitPosition = async () => {
  ElMessage.success('持仓更新成功');
  }
  else {
- // 创建持仓
+ // 已有持仓模式：所选基金已存在 position 记录，只创建组合-持仓关联，不新建持仓
+ if (existingPositionId.value) {
+ await portfolioApi.createPortfolioPosition({
+ portfolio_id: currentPortfolioId.value,
+ position_id: existingPositionId.value
+ });
+ ElMessage.success('已关联已有持仓');
+ }
+ else {
+ // 新建持仓 + 关联
  const result = await portfolioApi.createPosition(positionForm.value);
- // 创建关联
  await portfolioApi.createPortfolioPosition({
  portfolio_id: currentPortfolioId.value,
  position_id: result.id
  });
  ElMessage.success('持仓添加成功');
+ }
  }
  positionDialogVisible.value = false;
  fetchPortfolios();
@@ -377,17 +392,21 @@ const submitPosition = async () => {
  ElMessage.error(isEditPosition.value ? '更新失败' : '添加失败');
  }
 };
-// 删除持仓
+// 移除持仓：只删除组合-持仓关联，不删除持仓本身（持仓可被多组合共享/保留历史）
 const deletePosition = async (position) => {
+ if (!position.relation_id) {
+ ElMessage.error('缺少关联信息，无法移除');
+ return;
+ }
  try {
- await ElMessageBox.confirm('确定要删除这个持仓吗？', '提示', { type: 'warning' });
- await portfolioApi.deletePosition(position.id);
- ElMessage.success('删除成功');
+ await ElMessageBox.confirm(`确定从本组合移除 ${position.fund_name} 吗？（持仓本身不删除）`, '提示', { type: 'warning' });
+ await portfolioApi.deletePortfolioPosition(position.relation_id);
+ ElMessage.success('已从组合移除');
  fetchPortfolios();
  }
  catch (error) {
  if (error !== 'cancel') {
- ElMessage.error('删除失败');
+ ElMessage.error('移除失败');
  }
  }
 };
@@ -397,18 +416,41 @@ const formatNumber = (num) => {
  return '0.00';
  return Number(num).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
-// 监听基金代码变化
+// 监听基金代码变化：添加持仓时若该基金已有持仓记录，带出已有数据（只建关联，不新建持仓）
 import { watch } from 'vue';
-watch(() => positionForm.value.fund_code, (newCode) => {
- if (newCode) {
+watch(() => positionForm.value.fund_code, async (newCode) => {
+ if (!newCode) {
+ positionForm.value.fund_name = '';
+ existingPositionId.value = null;
+ return;
+ }
  const fund = funds.value.find(f => f.fund_code === newCode);
  if (fund) {
  positionForm.value.fund_name = fund.fund_name;
- positionForm.value.current_price = fund.net_asset_value || 0;
  }
+ // 编辑模式不查已有持仓
+ if (isEditPosition.value) {
+ existingPositionId.value = null;
+ return;
+ }
+ // 添加模式：查该基金是否已有持仓，有则带出
+ try {
+ const res = await portfolioApi.getPositionByFund(newCode);
+ const existing = res.data;
+ if (existing) {
+ existingPositionId.value = existing.id;
+ positionForm.value.shares = existing.shares;
+ positionForm.value.cost_price = existing.cost_price;
+ positionForm.value.current_price = existing.current_price;
+ positionForm.value.buy_date = existing.buy_date || positionForm.value.buy_date;
+ ElMessage.info(`该基金已有持仓，将直接关联到本组合（不新建持仓）`);
  }
  else {
- positionForm.value.fund_name = '';
+ existingPositionId.value = null;
+ if (fund) positionForm.value.current_price = fund.net_asset_value || 0;
+ }
+ } catch (e) {
+ existingPositionId.value = null;
  }
 });
 onMounted(() => {

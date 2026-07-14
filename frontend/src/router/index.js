@@ -9,6 +9,8 @@ import SystemLog from '@/views/SystemLog.vue'
 import UserManage from '@/views/UserManage.vue'
 import IndexInfo from '@/views/IndexInfo.vue'
 import IndexAnalysis from '@/views/IndexAnalysis.vue'
+import PositionManage from '@/views/PositionManage.vue'
+import PositionAnalysis from '@/views/PositionAnalysis.vue'
 
 import { auth, whenReady } from '@/stores/auth'
 
@@ -49,6 +51,25 @@ const routes = [
         name: 'FundNavHistory',
         component: FundNavHistory,
         meta: { title: '基金历史净值', sort: 40 }
+      },
+      {
+        path: '/position-analysis',
+        name: 'PositionAnalysisRoot',
+        meta: { title: '持仓分析', sort: 15, isParent: true },
+        children: [
+          {
+            path: '/position-analysis/manage',
+            name: 'PositionManage',
+            component: PositionManage,
+            meta: { title: '持仓信息管理', sort: 16, parentTitle: '持仓分析' }
+          },
+          {
+            path: '/position-analysis/analysis',
+            name: 'PositionAnalysis',
+            component: PositionAnalysis,
+            meta: { title: '持仓分析', sort: 17, parentTitle: '持仓分析' }
+          }
+        ]
       },
       {
         path: '/index',

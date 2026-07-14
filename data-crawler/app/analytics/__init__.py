@@ -1,4 +1,4 @@
-"""指数分析计算模块（纯计算，不依赖数据库）"""
+"""分析计算模块（纯计算，不依赖数据库）"""
 from .index_analysis import (
     calc_moving_average,
     calc_volatility,
@@ -9,6 +9,11 @@ from .index_analysis import (
     calc_ma_signal,
     calc_bollinger_bands,
     calc_bollinger_signal,
+)
+from .position_analysis import (
+    calc_max_drawdown,
+    calc_position_overview,
+    calc_position_allocation,
 )
 
 __all__ = [
@@ -21,4 +26,7 @@ __all__ = [
     'calc_ma_signal',
     'calc_bollinger_bands',
     'calc_bollinger_signal',
+    'calc_max_drawdown',
+    'calc_position_overview',
+    'calc_position_allocation',
 ]

@@ -9,8 +9,8 @@ import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage
-from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage
+from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
 
@@ -25,6 +25,7 @@ _portfolio_position_storage = PortfolioPositionStorage()
 _log_storage = None
 _user_storage = UserStorage()
 _index_storage = IndexInfoStorage()
+_position_snapshot_storage = PositionDailySnapshotStorage()
 
 # 会话签名密钥（登录态 Cookie 鉴权依赖）。生产环境必须在 .env 设置 SECRET_KEY
 app.secret_key = os.getenv('SECRET_KEY')
@@ -1196,9 +1197,9 @@ def get_portfolio_positions(portfolio_id):
 
         session = _portfolio_position_storage.get_session()
         try:
-            # 使用JOIN查询一次获取所有关联数据
+            # 使用JOIN查询一次获取持仓及关联关系（带 relation_id 供前端移除关联）
             query = session.query(
-                Position
+                Position, PortfolioPosition.id.label('relation_id')
             ).join(
                 PortfolioPosition,
                 PortfolioPosition.position_id == Position.id,
@@ -1213,9 +1214,10 @@ def get_portfolio_positions(portfolio_id):
             total_value = 0.0
             total_cost = 0.0
 
-            for position in query:
+            for position, relation_id in query:
                 pos_data = {
                     'id': position.id,
+                    'relation_id': relation_id,
                     'fund_code': position.fund_code,
                     'fund_name': position.fund_name,
                     'shares': float(position.shares) if position.shares else 0.0,
@@ -1382,10 +1384,28 @@ def get_position(position_id):
         position = _position_storage.get_position_by_id(position_id)
         if not position:
             return jsonify({'error': '持仓不存在'}), 404
-        
+
         return jsonify(position)
     except Exception as e:
         logger.error(f"获取持仓失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/by-fund', methods=['GET'])
+@log_request
+def get_position_by_fund():
+    """按基金代码查询已有持仓（供添加持仓时带出已有持仓）
+
+    参数：fund_code。返回持仓信息或 {data: null}（无持仓时）。
+    """
+    fund_code = request.args.get('fund_code', '')
+    if not fund_code:
+        return jsonify({'error': '缺少参数 fund_code'}), 400
+    try:
+        position = _position_storage.get_position_by_fund_code(fund_code)
+        return jsonify({'data': position}), 200
+    except Exception as e:
+        logger.error(f"按基金查询持仓失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -1833,6 +1853,84 @@ def get_index_dca():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"定投模拟失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 持仓分析接口 ====================
+
+@app.route('/api/positions/snapshot/options', methods=['GET'])
+@log_request
+def get_position_snapshot_options():
+    """获取有快照数据的可选持仓列表（供分析页下拉）"""
+    try:
+        data = _position_snapshot_storage.get_position_options()
+        return jsonify({'data': data}), 200
+    except Exception as e:
+        logger.error(f"获取持仓快照选项失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/snapshot/analysis', methods=['GET'])
+@log_request
+def get_position_snapshot_analysis():
+    """持仓分析：概览 + 盈亏/市值序列 + 最大回撤 + 全部持仓占比饼图
+
+    参数：position_id（必填）、start_date/end_date（可选）
+    series 针对选中的单个持仓；pie 为当日全部持仓市值占比（不受 position_id 影响）。
+    """
+    position_id = request.args.get('position_id', '')
+    if not position_id:
+        return jsonify({'error': '缺少参数 position_id'}), 400
+    try:
+        position_id = int(position_id)
+    except ValueError:
+        return jsonify({'error': 'position_id 必须为整数'}), 400
+
+    try:
+        start_date = request.args.get('start_date', '') or None
+        end_date = request.args.get('end_date', '') or None
+
+        series = _position_snapshot_storage.get_position_snapshot_series(
+            position_id=position_id, start_date=start_date, end_date=end_date
+        )
+        overview = calc_position_overview(series)
+
+        # 饼图：最新快照日的全部持仓占比（与选中持仓无关）
+        latest_all = _position_snapshot_storage.get_latest_snapshot_all_positions()
+        pie = calc_position_allocation(latest_all)
+
+        return jsonify({
+            'overview': overview,
+            'series': series,
+            'pie': pie,
+        }), 200
+    except Exception as e:
+        logger.error(f"持仓分析失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/snapshots', methods=['GET'])
+@log_request
+def get_position_snapshots():
+    """分页查询持仓快照列表（供管理/调试）"""
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+        position_id = request.args.get('position_id', '')
+        fund_code = request.args.get('fund_code', '')
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+
+        data, total = _position_snapshot_storage.get_snapshots_with_pagination(
+            position_id=int(position_id) if position_id else None,
+            fund_code=fund_code if fund_code else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None,
+            page=page, page_size=page_size
+        )
+        return jsonify({'data': data, 'total': total, 'page': page, 'page_size': page_size}), 200
+    except Exception as e:
+        logger.error(f"获取持仓快照列表失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 
