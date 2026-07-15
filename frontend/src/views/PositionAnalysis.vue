@@ -32,16 +32,14 @@
     </el-card>
 
     <div v-loading="loading">
-      <!-- 概览卡片 -->
-      <el-row :gutter="16" style="margin-bottom: 16px;">
-        <el-col :xs="12" :sm="8" :md="4" v-for="card in overviewCards" :key="card.label">
-          <div class="metric-card" :style="{ borderLeftColor: card.color || '#409EFF' }">
-            <div class="metric-label">{{ card.label }}</div>
-            <div class="metric-value" :style="{ color: card.valueColor || '#303133' }">{{ card.value }}</div>
-            <div class="metric-sub" v-if="card.sub">{{ card.sub }}</div>
-          </div>
-        </el-col>
-      </el-row>
+      <!-- 概览卡片：7 个等宽排满一行（flex 七等分），窄屏自动折行 -->
+      <div class="metric-row">
+        <div class="metric-card" v-for="card in overviewCards" :key="card.label" :style="{ borderLeftColor: card.color || '#409EFF' }">
+          <div class="metric-label">{{ card.label }}</div>
+          <div class="metric-value" :style="{ color: card.valueColor || '#303133' }">{{ card.value }}</div>
+          <div class="metric-sub" v-if="card.sub">{{ card.sub }}</div>
+        </div>
+      </div>
       <!-- 主图：盈亏比例折线图 -->
       <el-card style="margin-bottom: 16px; box-shadow: none;" :body-style="{ padding: '16px 20px' }">
         <template #header><span style="font-weight: 500;">盈亏比例走势</span></template>
@@ -403,15 +401,22 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.metric-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
 .metric-card {
+  flex: 1 1 0;
+  min-width: 120px;
   background: #fff;
   border-radius: 4px;
   border-left: 3px solid #409EFF;
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  padding: 10px 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
-.metric-label { font-size: 13px; color: #909399; margin-bottom: 6px; }
-.metric-value { font-size: 20px; font-weight: 600; color: #303133; line-height: 1.2; word-break: break-all; }
-.metric-sub { font-size: 12px; color: #c0c4cc; margin-top: 4px; }
+.metric-label { font-size: 12px; color: #909399; margin-bottom: 4px; }
+.metric-value { font-size: 16px; font-weight: 600; color: #303133; line-height: 1.2; word-break: break-all; }
+.metric-sub { font-size: 11px; color: #c0c4cc; margin-top: 3px; }
 </style>
