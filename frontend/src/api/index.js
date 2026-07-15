@@ -121,6 +121,21 @@ export const fundApi = {
   deleteFund: (id) => api.delete(`/funds/${id}`)
 }
 
+// 基金定投计划相关API（一个基金可配多条定投规则）
+export const dipPlanApi = {
+  // 获取定投计划列表（传 fund_code 查指定基金的，不传查全部启用中）
+  getPlans: (fundCode) => api.get('/dip-plans', { params: { fund_code: fundCode || '' } }),
+
+  // 创建定投计划
+  createPlan: (data) => api.post('/dip-plans', data),
+
+  // 更新定投计划
+  updatePlan: (id, data) => api.put(`/dip-plans/${id}`, data),
+
+  // 删除定投计划
+  deletePlan: (id) => api.delete(`/dip-plans/${id}`)
+}
+
 // 基金买入流水相关API
 export const buyerApi = {
   // 获取买入记录列表（支持搜索和分页）

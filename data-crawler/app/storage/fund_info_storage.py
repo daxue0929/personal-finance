@@ -134,12 +134,13 @@ class FundInfoStorage(StorageBase):
 
         return {'success': success_count, 'failed': fail_count}
 
-    def get_funds_with_pagination(self, fund_code=None, fund_name=None, fund_type=None, page=1, page_size=10):
+    def get_funds_with_pagination(self, fund_code=None, fund_name=None, fund_type=None, page=1, page_size=10, keyword=None):
         """
         获取基金信息列表（支持搜索和分页）
         :param fund_code: 基金代码（模糊搜索）
         :param fund_name: 基金名称（模糊搜索）
         :param fund_type: 基金类型
+        :param keyword: 关键字（同时模糊匹配基金代码或名称，非空时优先于 fund_code/fund_name）
         :param page: 页码
         :param page_size: 每页条数
         :return: (数据列表, 总数)
@@ -147,12 +148,20 @@ class FundInfoStorage(StorageBase):
         session = self.get_session()
         try:
             query = session.query(FundInfo).filter(FundInfo.del_flag == '1')
-            
+
             # 添加搜索条件
-            if fund_code:
-                query = query.filter(FundInfo.fund_code.like(f'%{fund_code}%'))
-            if fund_name:
-                query = query.filter(FundInfo.fund_name.like(f'%{fund_name}%'))
+            if keyword:
+                # 关键字同时匹配代码或名称（OR），非空时优先于单独的 fund_code/fund_name
+                from sqlalchemy import or_
+                query = query.filter(or_(
+                    FundInfo.fund_code.like(f'%{keyword}%'),
+                    FundInfo.fund_name.like(f'%{keyword}%')
+                ))
+            else:
+                if fund_code:
+                    query = query.filter(FundInfo.fund_code.like(f'%{fund_code}%'))
+                if fund_name:
+                    query = query.filter(FundInfo.fund_name.like(f'%{fund_name}%'))
             if fund_type:
                 query = query.filter(FundInfo.fund_type == fund_type)
             
