@@ -5,6 +5,7 @@
       <el-form :inline="true" style="margin-bottom: 0;">
         <el-form-item label="持仓">
           <el-select v-model="positionId" style="width: 260px;" @change="onParamChange">
+            <el-option label="全部持仓" value="all" />
             <el-option
               v-for="item in positionOptions"
               :key="item.position_id"
@@ -41,7 +42,6 @@
           </div>
         </el-col>
       </el-row>
-
       <!-- 主图：盈亏比例折线图 -->
       <el-card style="margin-bottom: 16px; box-shadow: none;" :body-style="{ padding: '16px 20px' }">
         <template #header><span style="font-weight: 500;">盈亏比例走势</span></template>
@@ -66,6 +66,13 @@
           </el-card>
         </el-col>
       </el-row>
+
+      <!-- 累计收益走势折线图（随持仓选择切换：全部持仓=组合每日总盈亏，单持仓=该持仓每日盈亏） -->
+      <el-card style="margin-bottom: 16px; box-shadow: none;" :body-style="{ padding: '16px 20px' }">
+        <template #header><span style="font-weight: 500;">累计收益走势{{ positionId === 'all' ? '（全部持仓·每日总盈亏）' : '' }}</span></template>
+        <div v-if="profitSeries.length" ref="profitChartRef" style="height: 320px;"></div>
+        <el-empty v-else description="暂无快照数据" />
+      </el-card>
     </div>
   </div>
 </template>
@@ -87,6 +94,8 @@ const positionId = ref(null)
 const overview = ref({ count: 0 })
 const series = ref([])
 const pie = ref([])
+const profitSeries = ref([])
+const realizedProfitTotal = ref(0)
 const loading = ref(false)
 
 const quickRanges = [
@@ -106,6 +115,7 @@ const disableEnd = (date) => startDate.value ? date.getTime() < new Date(startDa
 const { chartRef: rateChartRef, setOption: setRate } = useEChart()
 const { chartRef: valueChartRef, setOption: setValue } = useEChart()
 const { chartRef: pieChartRef, setOption: setPie } = useEChart()
+const { chartRef: profitChartRef, setOption: setProfit } = useEChart()
 
 const fmtDate = (d) => {
   const y = d.getFullYear()
@@ -130,13 +140,16 @@ const overviewCards = computed(() => {
   if (!o || !o.count) return []
   const plColor = (o.latest_profit_loss || 0) >= 0 ? UP : DOWN
   const ddColor = (o.max_drawdown || 0) > 0 ? DOWN : '#909399'
+  const rpt = realizedProfitTotal.value
+  const rptColor = (rpt || 0) >= 0 ? UP : DOWN
   return [
     { label: '最新市值', value: money(o.latest_value), sub: o.end_date, color: C_PRIMARY },
     { label: '最新盈亏', value: signedMoney(o.latest_profit_loss), valueColor: plColor, color: plColor, sub: pct(o.latest_profit_loss_rate) },
     { label: '区间最高市值', value: money(o.max_value), color: UP },
     { label: '区间最低市值', value: money(o.min_value), color: DOWN },
     { label: '最大回撤率', value: o.max_drawdown == null ? '-' : (o.max_drawdown > 0 ? `-${num(o.max_drawdown)}%` : '0.00%'), valueColor: ddColor, color: ddColor, sub: '峰值到谷值' },
-    { label: '区间盈亏变化', value: signedMoney(o.profit_loss_change), valueColor: (o.profit_loss_change || 0) >= 0 ? UP : DOWN, color: (o.profit_loss_change || 0) >= 0 ? UP : DOWN }
+    { label: '区间盈亏变化', value: signedMoney(o.profit_loss_change), valueColor: (o.profit_loss_change || 0) >= 0 ? UP : DOWN, color: (o.profit_loss_change || 0) >= 0 ? UP : DOWN },
+    { label: '累计已实现盈亏', value: signedMoney(rpt), valueColor: rptColor, color: rptColor, sub: '历史卖出已实现' }
   ]
 })
 
@@ -144,8 +157,9 @@ const fetchOptions = async () => {
   try {
     const res = await positionAnalysisApi.getOptions()
     positionOptions.value = res.data || []
-    if (positionOptions.value.length && !positionOptions.value.find(i => i.position_id === positionId.value)) {
-      positionId.value = positionOptions.value[0].position_id
+    // 默认选「全部持仓」组合视角
+    if (!positionId.value) {
+      positionId.value = 'all'
     }
   } catch (e) {
     ElMessage.error('获取持仓列表失败')
@@ -189,10 +203,17 @@ const fetchAnalysis = async () => {
     overview.value = res.overview || { count: 0 }
     series.value = res.series || []
     pie.value = res.pie || []
+    // 累计收益序列：随持仓选择切换。选「全部持仓」时用组合级 portfolio_series；
+    // 选单持仓时用该持仓 series（含 profit_loss 字段）。
+    profitSeries.value = positionId.value === 'all'
+      ? (res.portfolio_series || [])
+      : (res.series || [])
+    realizedProfitTotal.value = res.realized_profit_total || 0
     await nextTick()
     renderRate()
     renderValue()
     renderPie()
+    renderProfit()
   } catch (e) {
     console.error('[PositionAnalysis] fetchAnalysis 失败:', e)
     ElMessage.error('获取分析数据失败')
@@ -287,6 +308,74 @@ const renderValue = () => {
       itemStyle: { color: C_VALUE }, lineStyle: { color: C_VALUE },
       areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(84,112,198,0.3)' }, { offset: 1, color: 'rgba(84,112,198,0.02)' }] } }
     }]
+  })
+}
+
+// 累计收益走势折线图：按盈亏「变化方向」着色（上升段红、下降段绿），带 0 轴水面线。
+// 口径随持仓选择切换：全部持仓=组合每日总盈亏，单持仓=该持仓每日盈亏。
+const renderProfit = () => {
+  const s = profitSeries.value
+  if (!s.length) { setProfit({}); return }
+  const dates = s.map(p => p.snapshot_date)
+  const profits = s.map(p => Number(p.profit_loss))
+
+  // 每个数据点 symbol 颜色：首点按自身正负，后续按相对前点变化方向（上升红/下降绿）
+  const pointColors = profits.map((p, i) => {
+    if (i === 0) return p >= 0 ? UP : DOWN
+    return p >= profits[i - 1] ? UP : DOWN
+  })
+
+  // 每段相邻两点一条稀疏 line series，颜色按盈亏变化方向
+  const segSeries = []
+  for (let i = 1; i < profits.length; i++) {
+    const data = profits.map((_, idx) => (idx === i - 1 || idx === i) ? profits[idx] : null)
+    segSeries.push({
+      type: 'line',
+      data,
+      lineStyle: { color: profits[i] >= profits[i - 1] ? UP : DOWN, width: 2 },
+      symbol: 'none',
+      smooth: false,
+      connectNulls: false,
+      silent: true,
+      z: 1
+    })
+  }
+
+  // 主 series：承载全部点（symbol + tooltip + 0 轴 markLine），连线透明
+  const mainSeries = {
+    type: 'line',
+    data: profits.map((p, i) => ({ value: p, itemStyle: { color: pointColors[i] } })),
+    symbol: 'circle',
+    symbolSize: 6,
+    lineStyle: { opacity: 0 },
+    z: 2,
+    markLine: {
+      silent: true, symbol: 'none',
+      lineStyle: { color: '#909399', type: 'dashed' },
+      label: { show: true, formatter: '0', position: 'insideEndTop', color: '#909399', fontSize: 11 },
+      data: [{ yAxis: 0 }]
+    }
+  }
+
+  // 单点时无分段 series，主 series 用自身颜色画连线
+  if (profits.length === 1) {
+    mainSeries.lineStyle = { color: pointColors[0], width: 2, opacity: 1 }
+  }
+
+  const segCount = segSeries.length
+  setProfit({
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const p = params.find(x => x.seriesIndex === segCount)
+        if (!p) return ''
+        return `${p.axisValue}<br/>累计盈亏：${signedMoney(p.value)}`
+      }
+    },
+    grid: { left: 70, right: 30, top: 30, bottom: 40 },
+    xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+    yAxis: { type: 'value', name: '盈亏(元)', axisLabel: { formatter: '{value}' } },
+    series: [...segSeries, mainSeries]
   })
 }
 

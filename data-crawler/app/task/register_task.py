@@ -19,6 +19,7 @@ def register_all_tasks(scheduler):
     from .fetch_kc50_index_task import fetch_kc50_index_task
     from .backup_fund_nav_history_task import backup_fund_nav_history_task
     from .calculate_buyer_shares_task import calculate_buyer_shares_task
+    from .calculate_seller_amount_task import calculate_seller_amount_task
     from .backup_position_snapshot_task import backup_position_snapshot_task
 
     logger.info("开始注册任务...")
@@ -37,6 +38,9 @@ def register_all_tasks(scheduler):
 
     scheduler.register_task('calculate_buyer_shares_task', calculate_buyer_shares_task)
     logger.info("任务 [计算基金买入份额任务] 已注册")
+
+    scheduler.register_task('calculate_seller_amount_task', calculate_seller_amount_task)
+    logger.info("任务 [计算基金卖出金额任务] 已注册")
 
     scheduler.register_task('backup_position_snapshot_task', backup_position_snapshot_task)
     logger.info("任务 [持仓每日快照备份任务] 已注册")

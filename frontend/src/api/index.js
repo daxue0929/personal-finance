@@ -142,6 +142,24 @@ export const buyerApi = {
   quickBuy: (data) => api.post('/buyers/quick-buy', data)
 }
 
+// 基金卖出流水相关API
+export const sellerApi = {
+  // 获取卖出记录列表（支持搜索和分页）
+  getSellers: (params) => api.get('/sellers', { params }),
+
+  // 获取单个卖出记录
+  getSeller: (id) => api.get(`/sellers/${id}`),
+
+  // 创建卖出记录
+  createSeller: (data) => api.post('/sellers', data),
+
+  // 更新卖出记录
+  updateSeller: (id, data) => api.put(`/sellers/${id}`, data),
+
+  // 删除卖出记录
+  deleteSeller: (id) => api.delete(`/sellers/${id}`)
+}
+
 // 基金历史净值相关API
 export const fundNavApi = {
   // 获取基金历史净值列表（支持日期范围筛选和分页）

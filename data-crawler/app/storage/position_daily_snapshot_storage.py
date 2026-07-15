@@ -131,6 +131,50 @@ class PositionDailySnapshotStorage(StorageBase):
         finally:
             session.close()
 
+    def get_portfolio_snapshot_series(self, start_date: Optional[str] = None,
+                                      end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取组合级每日聚合快照序列（按 snapshot_date 升序），供累计收益图。
+
+        按快照日期分组，对所有持仓求和：SUM(current_value)/SUM(cost_amount)/SUM(profit_loss)，
+        盈亏率 = SUM(profit_loss)/SUM(cost_amount)×100（未舍入中间值再 round）。
+        与单持仓序列口径一致，便于前端单持仓/组合视角切换复用同一渲染逻辑。
+
+        :param start_date: 起始日期（YYYY-MM-DD，可选）
+        :param end_date: 结束日期（YYYY-MM-DD，可选）
+        :return: 每日聚合字典列表（升序），每项含
+                 snapshot_date/current_value/cost_amount/profit_loss/profit_loss_rate
+        """
+        session = self.get_session()
+        try:
+            query = session.query(
+                PositionDailySnapshot.snapshot_date,
+                func.sum(PositionDailySnapshot.current_value).label('current_value'),
+                func.sum(PositionDailySnapshot.cost_amount).label('cost_amount'),
+                func.sum(PositionDailySnapshot.profit_loss).label('profit_loss'),
+            ).group_by(PositionDailySnapshot.snapshot_date)
+            if start_date:
+                query = query.filter(PositionDailySnapshot.snapshot_date >= start_date)
+            if end_date:
+                query = query.filter(PositionDailySnapshot.snapshot_date <= end_date)
+            rows = query.order_by(PositionDailySnapshot.snapshot_date.asc()).all()
+
+            result = []
+            for r in rows:
+                current_value = float(r.current_value) if r.current_value is not None else 0.0
+                cost_amount = float(r.cost_amount) if r.cost_amount is not None else 0.0
+                profit_loss = float(r.profit_loss) if r.profit_loss is not None else 0.0
+                profit_loss_rate = round(profit_loss / cost_amount * 100, 2) if cost_amount > 0 else 0.0
+                result.append({
+                    'snapshot_date': str(r.snapshot_date) if r.snapshot_date else None,
+                    'current_value': current_value,
+                    'cost_amount': cost_amount,
+                    'profit_loss': profit_loss,
+                    'profit_loss_rate': profit_loss_rate,
+                })
+            return result
+        finally:
+            session.close()
+
     def get_snapshots_with_pagination(self, position_id=None, fund_code=None,
                                       start_date=None, end_date=None,
                                       page=1, page_size=10):

@@ -9,8 +9,8 @@ import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage
-from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage
+from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
 
@@ -18,6 +18,7 @@ app = Flask(__name__)
 _task_storage = TaskScheduleStorage()
 _fund_storage = FundInfoStorage()
 _buyer_storage = FundBuyerStorage()
+_seller_storage = FundSellerStorage()
 _nav_storage = FundNavHistoryStorage()
 _portfolio_storage = PortfolioStorage()
 _position_storage = PositionStorage()
@@ -1107,6 +1108,293 @@ def quick_buy():
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== 基金卖出流水API ====================
+
+@app.route('/api/sellers', methods=['GET'])
+@log_request
+def get_sellers():
+    """获取卖出记录列表（支持搜索和分页）"""
+    try:
+        # 获取分页参数
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+
+        # 获取搜索参数
+        fund_code = request.args.get('fund_code', '')
+        fund_name = request.args.get('fund_name', '')
+        sell_type = request.args.get('type', '')
+        sell_status = request.args.get('sell_status', '')
+        start_time = request.args.get('start_time', '')
+        end_time = request.args.get('end_time', '')
+
+        # 获取排序参数
+        sort_field = request.args.get('sort_field', '')
+        sort_order = request.args.get('sort_order', '')
+
+        # 使用存储类方法获取数据
+        sellers, total = _seller_storage.get_sellers_with_pagination(
+            fund_code=fund_code if fund_code else None,
+            fund_name=fund_name if fund_name else None,
+            sell_type=sell_type if sell_type else None,
+            sell_status=sell_status if sell_status else None,
+            start_time=start_time if start_time else None,
+            end_time=end_time if end_time else None,
+            sort_field=sort_field if sort_field else None,
+            sort_order=sort_order if sort_order else None,
+            page=page,
+            page_size=page_size
+        )
+
+        return jsonify({
+            'data': sellers,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }), 200
+    except Exception as e:
+        logger.error(f"获取卖出记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sellers/<int:seller_id>', methods=['GET'])
+@log_request
+def get_seller(seller_id):
+    """获取单个卖出记录"""
+    try:
+        from ..storage.fund_seller_storage import FundSeller
+
+        session = _seller_storage.Session()
+
+        try:
+            seller = session.query(FundSeller).filter(
+                FundSeller.id == seller_id,
+                FundSeller.del_flag == '1'
+            ).first()
+
+            if seller:
+                result = {
+                    'id': seller.id,
+                    'fund_code': seller.fund_code,
+                    'fund_name': seller.fund_name,
+                    'time': str(seller.time),
+                    'shares': float(seller.shares) if seller.shares else 0.0,
+                    'amt': float(seller.amt) if seller.amt is not None else None,
+                    'nav': float(seller.nav) if seller.nav is not None else None,
+                    'realized_profit': float(seller.realized_profit) if seller.realized_profit is not None else None,
+                    'type': seller.type,
+                    'policy': seller.policy,
+                    'sell_status': seller.sell_status,
+                    'remark': seller.remark,
+                    'create_time': str(seller.create_time) if seller.create_time else None,
+                    'update_time': str(seller.update_time) if seller.update_time else None
+                }
+                return jsonify(result), 200
+            else:
+                return jsonify({'error': '卖出记录不存在'}), 404
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error(f"获取卖出记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sellers', methods=['POST'])
+@log_request
+def create_seller():
+    """创建卖出记录"""
+    try:
+        from ..storage.fund_seller_storage import FundSeller
+        data = request.json
+        required_fields = ['fund_code', 'time', 'shares']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'缺少必填字段: {field}'}), 400
+
+        # 数据类型验证
+        try:
+            shares = float(data['shares'])
+            if shares <= 0:
+                return jsonify({'error': '卖出份额必须大于0'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': '卖出份额必须是有效的数字'}), 400
+
+        # 创建新的session
+        session = _seller_storage.Session()
+
+        try:
+            # 若存在同基金同日的软删除记录，恢复并覆盖（避免唯一键 uk_fund_code_time 冲突）
+            sell_date = dt.strptime(data['time'], '%Y-%m-%d').date()
+            existing = session.query(FundSeller).filter(
+                FundSeller.fund_code == data['fund_code'],
+                FundSeller.time == sell_date
+            ).first()
+
+            if existing:
+                # 恢复软删除记录并覆盖字段
+                existing.fund_name = data.get('fund_name', '')
+                existing.shares = shares
+                existing.type = data.get('type', '')
+                existing.policy = data.get('policy', '')
+                existing.sell_status = data.get('sell_status', 'PENDING')
+                existing.remark = data.get('remark', '')
+                existing.amt = None
+                existing.nav = None
+                existing.realized_profit = None
+                existing.del_flag = '1'
+                existing.create_by = 'api'
+                existing.create_time = get_beijing_now()
+                existing.update_by = 'api'
+                existing.update_time = get_beijing_now()
+                session.commit()
+                session.refresh(existing)
+                return jsonify({
+                    'success': True,
+                    'message': '卖出记录创建成功',
+                    'id': existing.id
+                }), 201
+
+            new_seller = FundSeller(
+                fund_code=data['fund_code'],
+                fund_name=data.get('fund_name', ''),
+                time=sell_date,
+                shares=shares,
+                type=data.get('type', ''),
+                policy=data.get('policy', ''),
+                sell_status=data.get('sell_status', 'PENDING'),
+                remark=data.get('remark', ''),
+                del_flag='1',
+                create_by='api',
+                create_time=get_beijing_now(),
+                update_by='api',
+                update_time=get_beijing_now()
+            )
+
+            session.add(new_seller)
+            session.commit()
+            session.refresh(new_seller)
+
+            return jsonify({
+                'success': True,
+                'message': '卖出记录创建成功',
+                'id': new_seller.id
+            }), 201
+        except Exception as e:
+            session.rollback()
+            logger.error(f"创建卖出记录失败: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error(f"创建卖出记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sellers/<int:seller_id>', methods=['PUT'])
+@log_request
+def update_seller(seller_id):
+    """更新卖出记录"""
+    try:
+        from ..storage.fund_seller_storage import FundSeller
+        data = request.json
+
+        # 创建新的session
+        session = _seller_storage.Session()
+
+        try:
+            seller = session.query(FundSeller).filter(
+                FundSeller.id == seller_id,
+                FundSeller.del_flag == '1'
+            ).first()
+
+            if not seller:
+                return jsonify({'error': '卖出记录不存在'}), 404
+
+            # RISK-7 防护：禁止修改计算字段（amt/nav/realized_profit 由任务回写，不可手动改）
+            # 防止把 SUCCESS 改回 PENDING 导致任务重处理 -> 重复扣减持仓
+            if 'sell_status' in data:
+                new_status = data['sell_status']
+                if seller.sell_status == 'SUCCESS' and new_status != 'SUCCESS':
+                    return jsonify({
+                        'error': '已成功的卖出记录不可回退状态（避免重复扣减持仓）'
+                    }), 400
+                seller.sell_status = new_status
+
+            # 仅允许修改录入字段，计算字段（amt/nav/realized_profit）服务端忽略
+            if 'fund_code' in data:
+                seller.fund_code = data['fund_code']
+            if 'fund_name' in data:
+                seller.fund_name = data['fund_name']
+            if 'time' in data:
+                seller.time = dt.strptime(data['time'], '%Y-%m-%d').date()
+            if 'shares' in data:
+                seller.shares = data['shares']
+            if 'type' in data:
+                seller.type = data['type']
+            if 'policy' in data:
+                seller.policy = data['policy']
+            if 'remark' in data:
+                seller.remark = data['remark']
+
+            seller.update_by = 'api'
+            seller.update_time = get_beijing_now()
+
+            session.commit()
+
+            return jsonify({
+                'success': True,
+                'message': '卖出记录更新成功'
+            }), 200
+        except Exception as e:
+            session.rollback()
+            logger.error(f"更新卖出记录失败: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error(f"更新卖出记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sellers/<int:seller_id>', methods=['DELETE'])
+@log_request
+def delete_seller(seller_id):
+    """删除卖出记录"""
+    try:
+        from ..storage.fund_seller_storage import FundSeller
+
+        # 创建新的session
+        session = _seller_storage.Session()
+
+        try:
+            seller = session.query(FundSeller).filter(
+                FundSeller.id == seller_id,
+                FundSeller.del_flag == '1'
+            ).first()
+
+            if not seller:
+                return jsonify({'error': '卖出记录不存在'}), 404
+
+            seller.del_flag = '0'
+            seller.update_by = 'api'
+            seller.update_time = get_beijing_now()
+
+            session.commit()
+
+            return jsonify({
+                'success': True,
+                'message': '卖出记录删除成功'
+            }), 200
+        except Exception as e:
+            session.rollback()
+            logger.error(f"删除卖出记录失败: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error(f"删除卖出记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 def create_app():
     return app
 
@@ -1873,36 +2161,62 @@ def get_position_snapshot_options():
 @app.route('/api/positions/snapshot/analysis', methods=['GET'])
 @log_request
 def get_position_snapshot_analysis():
-    """持仓分析：概览 + 盈亏/市值序列 + 最大回撤 + 全部持仓占比饼图
+    """持仓分析：概览 + 盈亏/市值序列 + 最大回撤 + 全部持仓占比饼图 + 累计收益序列 + 已实现盈亏
 
-    参数：position_id（必填）、start_date/end_date（可选）
-    series 针对选中的单个持仓；pie 为当日全部持仓市值占比（不受 position_id 影响）。
+    参数：position_id（可选，空或 'all' 表示全部持仓/组合视角）、start_date/end_date（可选）
+    - 选单持仓：series/overview 为该持仓视角（单持仓序列）
+    - 选全部持仓（position_id 为空/'all'）：series/overview 为组合级聚合视角
+    - portfolio_series：始终返回组合级每日聚合盈亏序列（累计收益图，随持仓切换展示不同视角由前端决定）
+    - pie：最新日全部持仓占比（与 position_id 无关）
+    - realized_profit_total：所有 SUCCESS 卖出记录的已实现盈亏求和
     """
-    position_id = request.args.get('position_id', '')
-    if not position_id:
-        return jsonify({'error': '缺少参数 position_id'}), 400
-    try:
-        position_id = int(position_id)
-    except ValueError:
-        return jsonify({'error': 'position_id 必须为整数'}), 400
+    position_id_raw = request.args.get('position_id', '')
 
     try:
         start_date = request.args.get('start_date', '') or None
         end_date = request.args.get('end_date', '') or None
 
-        series = _position_snapshot_storage.get_position_snapshot_series(
-            position_id=position_id, start_date=start_date, end_date=end_date
+        # 组合级累计收益序列（按日期聚合全部持仓）
+        portfolio_rows = _position_snapshot_storage.get_portfolio_snapshot_series(
+            start_date=start_date, end_date=end_date
         )
-        overview = calc_position_overview(series)
+        portfolio_series = calc_portfolio_profit_series(portfolio_rows)
+
+        # 单持仓 vs 组合视角
+        is_portfolio_mode = position_id_raw in ('', 'all')
+        if is_portfolio_mode:
+            series = portfolio_rows
+            overview = calc_portfolio_overview(portfolio_rows)
+        else:
+            try:
+                position_id = int(position_id_raw)
+            except ValueError:
+                return jsonify({'error': 'position_id 必须为整数或 all'}), 400
+            series = _position_snapshot_storage.get_position_snapshot_series(
+                position_id=position_id, start_date=start_date, end_date=end_date
+            )
+            overview = calc_position_overview(series)
 
         # 饼图：最新快照日的全部持仓占比（与选中持仓无关）
         latest_all = _position_snapshot_storage.get_latest_snapshot_all_positions()
         pie = calc_position_allocation(latest_all)
 
+        # 累计已实现盈亏：组合视角=全部 SUCCESS 卖出求和；单持仓视角=该基金 SUCCESS 卖出求和
+        if is_portfolio_mode:
+            realized_profit_total = _seller_storage.get_realized_profit_total()
+        else:
+            # 单持仓模式：取出该持仓的 fund_code 后按基金过滤
+            pos = _position_storage.get_position_by_id(position_id)
+            realized_profit_total = _seller_storage.get_realized_profit_total(
+                fund_code=pos['fund_code'] if pos else None
+            )
+
         return jsonify({
             'overview': overview,
             'series': series,
             'pie': pie,
+            'portfolio_series': portfolio_series,
+            'realized_profit_total': realized_profit_total,
         }), 200
     except Exception as e:
         logger.error(f"持仓分析失败: {e}")

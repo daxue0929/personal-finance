@@ -16,6 +16,8 @@ from app.analytics.position_analysis import (
     calc_max_drawdown,
     calc_position_overview,
     calc_position_allocation,
+    calc_portfolio_profit_series,
+    calc_portfolio_overview,
 )
 
 
@@ -189,3 +191,95 @@ def test_allocation_decimal():
     result = calc_position_allocation(snaps)
     assert result[0]['fund_code'] == 'A'
     assert result[0]['percent'] == pytest.approx(72.63, abs=0.1)
+
+
+# ==================== 组合级累计收益序列 ====================
+# calc_portfolio_profit_series：将「按日聚合后的快照行」转为每日累计盈亏序列。
+# 输入约定：rows 为单持仓序列 OR 组合级聚合行，每项含 snapshot_date/current_value/cost_amount/profit_loss。
+#   - 单持仓序列：直接透传，序列化为 {snapshot_date, profit_loss}（升序）。
+#   - 组合级聚合行：后端已按 snapshot_date SUM 聚合，本函数仅做映射+排序。
+# 输出：[{snapshot_date, profit_loss}]，按日期升序。
+
+def test_portfolio_series_single_position_passthrough():
+    """单持仓序列：透传为 (date, profit_loss) 序列，升序"""
+    rows = [
+        _snap('2026-07-12', 1000.0, 100.0, 11.11),
+        _snap('2026-07-13', 1200.0, 200.0, 20.0),
+        _snap('2026-07-14', 900.0, -50.0, -5.0),
+    ]
+    series = calc_portfolio_profit_series(rows)
+    assert [p['snapshot_date'] for p in series] == ['2026-07-12', '2026-07-13', '2026-07-14']
+    assert [p['profit_loss'] for p in series] == [100.0, 200.0, -50.0]
+
+
+def test_portfolio_series_aggregated_rows():
+    """组合级聚合行（已含 SUM 后的 profit_loss）：映射为序列"""
+    rows = [
+        {'snapshot_date': '2026-07-12', 'profit_loss': 300.0, 'current_value': 3000.0, 'cost_amount': 2700.0},
+        {'snapshot_date': '2026-07-13', 'profit_loss': 500.0, 'current_value': 3200.0, 'cost_amount': 2700.0},
+    ]
+    series = calc_portfolio_profit_series(rows)
+    assert len(series) == 2
+    assert series[0] == {'snapshot_date': '2026-07-12', 'profit_loss': 300.0}
+    assert series[1] == {'snapshot_date': '2026-07-13', 'profit_loss': 500.0}
+
+
+def test_portfolio_series_unsorted_input_gets_sorted():
+    """输入乱序时按日期升序输出"""
+    rows = [
+        _snap('2026-07-14', 900.0, -50.0, -5.0),
+        _snap('2026-07-12', 1000.0, 100.0, 11.11),
+        _snap('2026-07-13', 1200.0, 200.0, 20.0),
+    ]
+    series = calc_portfolio_profit_series(rows)
+    assert [p['snapshot_date'] for p in series] == ['2026-07-12', '2026-07-13', '2026-07-14']
+
+
+def test_portfolio_series_empty():
+    """空输入返回空列表"""
+    assert calc_portfolio_profit_series([]) == []
+
+
+def test_portfolio_series_decimal():
+    """兼容 Decimal 输入"""
+    from decimal import Decimal
+    rows = [
+        {'snapshot_date': '2026-07-12', 'profit_loss': Decimal('100.00'), 'current_value': Decimal('1000.00'), 'cost_amount': Decimal('900.00')},
+        {'snapshot_date': '2026-07-13', 'profit_loss': Decimal('200.00'), 'current_value': Decimal('1100.00'), 'cost_amount': Decimal('900.00')},
+    ]
+    series = calc_portfolio_profit_series(rows)
+    assert series[0]['profit_loss'] == pytest.approx(100.0)
+    assert series[1]['profit_loss'] == pytest.approx(200.0)
+
+
+# ==================== 组合级概览 ====================
+# calc_portfolio_overview：对聚合后的组合序列计算概览（与单持仓概览同口径，
+# 但基于聚合行 {snapshot_date, current_value, cost_amount, profit_loss}）。
+
+def test_portfolio_overview_basic():
+    rows = [
+        {'snapshot_date': '2026-07-12', 'current_value': 3000.0, 'cost_amount': 2700.0, 'profit_loss': 300.0},
+        {'snapshot_date': '2026-07-13', 'current_value': 3500.0, 'cost_amount': 2700.0, 'profit_loss': 800.0},
+        {'snapshot_date': '2026-07-14', 'current_value': 2500.0, 'cost_amount': 2700.0, 'profit_loss': -200.0},
+    ]
+    o = calc_portfolio_overview(rows)
+    assert o['count'] == 3
+    assert o['start_date'] == '2026-07-12'
+    assert o['end_date'] == '2026-07-14'
+    assert o['latest_value'] == 2500.0
+    assert o['latest_profit_loss'] == -200.0
+    assert o['max_value'] == 3500.0
+    assert o['min_value'] == 2500.0
+    # peak=3500, trough=2500 -> 28.57%
+    assert o['max_drawdown'] == pytest.approx(28.57, abs=0.01)
+
+
+def test_portfolio_overview_empty():
+    assert calc_portfolio_overview([]) == {'count': 0}
+
+
+def test_portfolio_overview_single_point():
+    rows = [{'snapshot_date': '2026-07-12', 'current_value': 1000.0, 'cost_amount': 900.0, 'profit_loss': 100.0}]
+    o = calc_portfolio_overview(rows)
+    assert o['count'] == 1
+    assert o['max_drawdown'] is None
