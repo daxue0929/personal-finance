@@ -19,6 +19,57 @@ from ..utils.datetime_utils import get_beijing_now
 from .base import Base, StorageBase
 
 
+def _compute_buyer_accumulation(old_shares, old_cost_amount, buy_shares, buy_amt, current_price):
+    """纯计算：按加权平均成本法计算买入后的持仓累加（不依赖数据库，便于单元测试）。
+
+    与卖出侧 _compute_sell_reduction 对称。幂等性由调用方（PENDING 状态机 + 原子事务）保证，
+    本函数只做计算，不做日期水位判断。
+
+    :param old_shares: 原持仓份额
+    :param old_cost_amount: 原成本金额
+    :param buy_shares: 本次买入份额
+    :param buy_amt: 本次买入金额（直接从流水传入，避免浮点精度问题）
+    :param current_price: 当前最新净值（用于重算市值/盈亏）
+    :return: dict
+        - {'ok': True, 'new_total_shares', 'new_cost_amount', 'weighted_cost_price',
+           'current_value', 'profit_loss', 'profit_loss_rate'}
+        - new_total_shares 为 0 时 current_value/profit_loss/profit_loss_rate 强制归零
+    """
+    old_shares = float(old_shares)
+    old_cost_amount = float(old_cost_amount)
+    buy_shares = float(buy_shares)
+    buy_amt = float(buy_amt)
+    current_price = float(current_price)
+
+    new_total_shares = old_shares + buy_shares
+    new_cost_amount = round(old_cost_amount + buy_amt, 2)
+
+    if new_total_shares == 0:
+        return {
+            'ok': True,
+            'new_total_shares': 0,
+            'new_cost_amount': 0,
+            'weighted_cost_price': 0,
+            'current_value': 0,
+            'profit_loss': 0,
+            'profit_loss_rate': 0,
+        }
+
+    weighted_cost_price = new_cost_amount / new_total_shares
+    current_value = round(new_total_shares * current_price, 2)
+    profit_loss = round(current_value - new_cost_amount, 2)
+    profit_loss_rate = round(profit_loss / new_cost_amount * 100, 2) if new_cost_amount > 0 else 0
+    return {
+        'ok': True,
+        'new_total_shares': new_total_shares,
+        'new_cost_amount': new_cost_amount,
+        'weighted_cost_price': weighted_cost_price,
+        'current_value': current_value,
+        'profit_loss': profit_loss,
+        'profit_loss_rate': profit_loss_rate,
+    }
+
+
 class FundBuyer(Base):
     __tablename__ = 'fund_buyer'
 
@@ -213,37 +264,99 @@ class FundBuyerStorage(StorageBase):
         finally:
             session.close()
 
-    def update_buyer_shares(self, buyer_id: int, shares: float, buy_status: str = 'SUCCESS') -> bool:
+    def process_buyer_transaction(self, buyer_ids: list, fund_code: str,
+                                  buy_shares: float, buy_amt: float,
+                                  current_price: float, buy_date: str) -> str:
         """
-        更新买入记录的份额和状态
-        :param buyer_id: 买入记录ID
-        :param shares: 计算后的份额
-        :param buy_status: 买入状态（默认SUCCESS）
-        :return: True/False
+        原子化处理买入交易：累加持仓 + 回写买入记录份额/状态，单 session 单 commit。
+
+        解决「先标记买入 SUCCESS 后更新持仓」的非原子性：原实现 update_buyer_shares 与
+        update_position_by_buyer 各自 commit，若第二步失败，买入记录已 SUCCESS 而持仓未累加，
+        该笔买入永远不会再被处理（已不在 PENDING 查询里），持仓永久漏加。本方法把两步合并为
+        一个事务，任一步失败整体回滚，买入记录保持 PENDING 等待下次重试。与卖出侧
+        process_seller_transaction 对称。
+
+        幂等由 PENDING 状态机保证：get_pending_buyers 只取 PENDING 记录，每笔买入只处理一次，
+        不再依赖 position.buy_date 做日期水位（原水位会误杀补录的历史/同日买入）。
+
+        :param buyer_ids: 本次合并涉及的买入记录ID列表（同一天同一基金多笔合并）
+        :param fund_code: 基金代码
+        :param buy_shares: 本次买入份额（已合并）
+        :param buy_amt: 本次买入金额（已合并，直接从流水传入避免浮点精度问题）
+        :param current_price: 当前最新净值（买入当日净值，同时用于重算市值/盈亏与持仓 current_price）
+        :param buy_date: 本次买入日期
+        :return: 状态码
+                 'SUCCESS' - 累加成功并已回写
+                 'NO_POSITION' - 无持仓记录（买入记录仍标记 SUCCESS，因持仓不存在非异常）
+                 'ERROR' - 异常（保持 PENDING，下次重试）
         """
+        from .position_storage import Position
         session = self.get_session()
         try:
-            buyer = session.query(FundBuyer).filter(
-                FundBuyer.id == buyer_id,
-                FundBuyer.del_flag == '1'
+            # 1. 纯计算累加结果
+            position = session.query(Position).filter(
+                Position.fund_code == fund_code,
+                Position.del_flag == '1'
             ).first()
-            
-            if not buyer:
-                logger.warning(f"买入记录 {buyer_id} 不存在")
-                return False
 
-            buyer.shares = shares
-            buyer.buy_status = buy_status
-            buyer.update_by = 'system'
-            buyer.update_time = get_beijing_now()
+            if not position:
+                # 无持仓：买入份额照常标记 SUCCESS（持仓不存在非异常，不计入持仓）
+                session.query(FundBuyer).filter(
+                    FundBuyer.id.in_(buyer_ids),
+                    FundBuyer.del_flag == '1'
+                ).update({
+                    FundBuyer.shares: buy_shares,
+                    FundBuyer.buy_status: 'SUCCESS',
+                    FundBuyer.update_by: 'system',
+                    FundBuyer.update_time: get_beijing_now(),
+                }, synchronize_session=False)
+                session.commit()
+                logger.info(f"买入交易 {buyer_ids}: 基金 {fund_code} 无持仓记录，仅标记买入 SUCCESS")
+                return 'NO_POSITION'
+
+            position_id = position.id
+            old_shares = float(position.shares) if position.shares else 0.0
+            old_cost_amount = float(position.cost_amount) if position.cost_amount else 0.0
+
+            calc = _compute_buyer_accumulation(
+                old_shares, old_cost_amount, buy_shares, buy_amt, current_price
+            )
+
+            # 2. 累加持仓（加权成本法）
+            position.shares = calc['new_total_shares']
+            position.cost_price = calc['weighted_cost_price']
+            position.cost_amount = calc['new_cost_amount']
+            position.current_price = current_price
+            position.current_value = calc['current_value']
+            position.profit_loss = calc['profit_loss']
+            position.profit_loss_rate = calc['profit_loss_rate']
+            position.buy_date = datetime.strptime(buy_date, '%Y-%m-%d').date()
+            position.update_by = 'system'
+            position.update_time = get_beijing_now()
+
+            # 3. 同事务回写买入记录份额/状态
+            session.query(FundBuyer).filter(
+                FundBuyer.id.in_(buyer_ids),
+                FundBuyer.del_flag == '1'
+            ).update({
+                FundBuyer.shares: buy_shares,
+                FundBuyer.buy_status: 'SUCCESS',
+                FundBuyer.update_by: 'system',
+                FundBuyer.update_time: get_beijing_now(),
+            }, synchronize_session=False)
 
             session.commit()
-            logger.info(f"更新买入记录 {buyer_id} 份额成功: {shares}, 状态: {buy_status}")
-            return True
+            logger.info(
+                f"买入交易 {buyer_ids} 原子完成: 持仓 {position_id} 原份额 {old_shares} + 买入 {buy_shares} "
+                f"= 新份额 {calc['new_total_shares']}, 加权成本价 {calc['weighted_cost_price']:.4f}, "
+                f"买入日期 {buy_date}"
+            )
+            return 'SUCCESS'
         except Exception as e:
             session.rollback()
-            logger.error(f"更新买入记录 {buyer_id} 份额失败: {e}")
-            return False
+            # 异常保持 PENDING，下次任务重试（避免误标 SUCCESS 导致永久漏加）
+            logger.error(f"买入交易 {buyer_ids} 原子处理失败 (fund_code={fund_code}): {e}")
+            return 'ERROR'
         finally:
             session.close()
 
