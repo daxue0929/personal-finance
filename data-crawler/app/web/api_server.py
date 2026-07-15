@@ -9,7 +9,7 @@ import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage
 from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
@@ -27,6 +27,7 @@ _log_storage = None
 _user_storage = UserStorage()
 _index_storage = IndexInfoStorage()
 _position_snapshot_storage = PositionDailySnapshotStorage()
+_dip_plan_storage = FundDipPlanStorage()
 
 # 会话签名密钥（登录态 Cookie 鉴权依赖）。生产环境必须在 .env 设置 SECRET_KEY
 app.secret_key = os.getenv('SECRET_KEY')
@@ -593,12 +594,14 @@ def get_funds():
         fund_code = request.args.get('fund_code', '')
         fund_name = request.args.get('fund_name', '')
         fund_type = request.args.get('fund_type', '')
-        
+        keyword = request.args.get('keyword', '')
+
         # 使用存储类方法获取数据（确保使用pool_pre_ping配置）
         funds, total = _fund_storage.get_funds_with_pagination(
             fund_code=fund_code if fund_code else None,
             fund_name=fund_name if fund_name else None,
             fund_type=fund_type if fund_type else None,
+            keyword=keyword if keyword else None,
             page=page,
             page_size=page_size
         )
@@ -812,6 +815,105 @@ def delete_fund(fund_id):
             session.close()
     except Exception as e:
         logger.error(f"删除基金失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 基金定投计划API ====================
+# 一个基金可配多条定投计划（单基金多规则），净值更新任务命中当天且当天有净值时
+# 自动插入当天 PENDING 买入流水，由 calculate_buyer_shares_task 计算份额。
+
+@app.route('/api/dip-plans', methods=['GET'])
+@log_request
+def get_dip_plans():
+    """获取定投计划列表。传 fund_code 查指定基金的，不传查全部。"""
+    try:
+        fund_code = request.args.get('fund_code', '')
+        if fund_code:
+            data = _dip_plan_storage.get_plans_by_fund_code(fund_code)
+        else:
+            # 不传 fund_code 时返回全部启用中的（任务视角），前端管理页一般传 fund_code
+            data = _dip_plan_storage.get_enabled_plans()
+        return jsonify({'data': data, 'total': len(data)}), 200
+    except Exception as e:
+        logger.error(f"获取定投计划失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def _validate_dip_plan_data(data):
+    """校验定投计划参数，返回 (ok, error_msg)"""
+    freq = data.get('dip_frequency', '')
+    if freq not in ('daily', 'weekly', 'monthly'):
+        return False, 'dip_frequency 必须为 daily/weekly/monthly'
+    # weekly: dip_day 1-7；monthly: dip_day 1-28；daily: dip_day 忽略
+    if freq in ('weekly', 'monthly'):
+        dip_day = str(data.get('dip_day', '')).strip()
+        upper = 7 if freq == 'weekly' else 28
+        try:
+            day_val = int(dip_day)
+        except (TypeError, ValueError):
+            return False, f'dip_day 必须为 1-{upper} 的整数'
+        if not 1 <= day_val <= upper:
+            return False, f'dip_day 必须为 1-{upper}'
+    # 金额必须 > 0
+    try:
+        amount = float(data.get('dip_amount', 0))
+    except (TypeError, ValueError):
+        return False, 'dip_amount 必须为数字'
+    if amount <= 0:
+        return False, 'dip_amount 必须大于 0'
+    return True, None
+
+
+@app.route('/api/dip-plans', methods=['POST'])
+@log_request
+def create_dip_plan():
+    """创建定投计划"""
+    try:
+        data = request.json
+        if not data.get('fund_code'):
+            return jsonify({'error': '缺少必填字段: fund_code'}), 400
+        ok, msg = _validate_dip_plan_data(data)
+        if not ok:
+            return jsonify({'error': msg}), 400
+
+        plan_id = _dip_plan_storage.create_plan(data)
+        if plan_id is None:
+            return jsonify({'error': '创建定投计划失败'}), 500
+        return jsonify({'success': True, 'message': '定投计划创建成功', 'id': plan_id}), 201
+    except Exception as e:
+        logger.error(f"创建定投计划失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/dip-plans/<int:plan_id>', methods=['PUT'])
+@log_request
+def update_dip_plan(plan_id):
+    """更新定投计划"""
+    try:
+        data = request.json
+        # 若改了频率/日期/金额，校验新值
+        if any(k in data for k in ('dip_frequency', 'dip_day', 'dip_amount')):
+            ok, msg = _validate_dip_plan_data(data)
+            if not ok:
+                return jsonify({'error': msg}), 400
+        if _dip_plan_storage.update_plan(plan_id, data):
+            return jsonify({'success': True, 'message': '定投计划更新成功'}), 200
+        return jsonify({'error': '定投计划不存在或更新失败'}), 404
+    except Exception as e:
+        logger.error(f"更新定投计划失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/dip-plans/<int:plan_id>', methods=['DELETE'])
+@log_request
+def delete_dip_plan(plan_id):
+    """删除定投计划（软删除）"""
+    try:
+        if _dip_plan_storage.delete_plan(plan_id):
+            return jsonify({'success': True, 'message': '定投计划删除成功'}), 200
+        return jsonify({'error': '定投计划不存在'}), 404
+    except Exception as e:
+        logger.error(f"删除定投计划失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

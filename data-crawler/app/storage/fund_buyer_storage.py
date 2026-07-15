@@ -77,7 +77,7 @@ class FundBuyer(Base):
     fund_code = Column(String(10), nullable=False)
     fund_name = Column(String(64), default='')
     time = Column(Date, nullable=False, default=datetime.now().date())
-    amt = Column(DECIMAL(7, 4), default=0.0000)
+    amt = Column(DECIMAL(10, 2), default=0.00)
     type = Column(String(64), default='')
     policy = Column(String(500), default='')
     del_flag = Column(CHAR(1), default='1')
