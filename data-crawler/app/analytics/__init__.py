@@ -14,6 +14,8 @@ from .position_analysis import (
     calc_max_drawdown,
     calc_position_overview,
     calc_position_allocation,
+    calc_portfolio_profit_series,
+    calc_portfolio_overview,
 )
 
 __all__ = [
@@ -29,4 +31,6 @@ __all__ = [
     'calc_max_drawdown',
     'calc_position_overview',
     'calc_position_allocation',
+    'calc_portfolio_profit_series',
+    'calc_portfolio_overview',
 ]

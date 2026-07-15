@@ -96,3 +96,60 @@ def calc_position_allocation(position_snapshots: List[Dict[str, Any]]) -> List[D
     # 按占比降序
     items.sort(key=lambda x: x['percent'], reverse=True)
     return items
+
+
+def calc_portfolio_profit_series(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """累计收益序列：将快照行（单持仓序列或组合级聚合行）转为每日盈亏序列。
+
+    输入约定：rows 每项含 snapshot_date / profit_loss（数值或 Decimal），可乱序。
+    组合级时调用方需先按 snapshot_date 聚合 SUM（后端 SQL 完成）；本函数仅做映射+排序。
+
+    :return: [{snapshot_date, profit_loss}]，按日期升序；空输入返回 []
+    """
+    if not rows:
+        return []
+    items = [
+        {'snapshot_date': str(r.get('snapshot_date')), 'profit_loss': _f(r.get('profit_loss'))}
+        for r in rows
+    ]
+    items.sort(key=lambda x: x['snapshot_date'])
+    return items
+
+
+def calc_portfolio_overview(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """组合级区间概览（基于聚合后的每日总市值/总盈亏序列）。
+
+    与单持仓概览同口径，但输入为组合级聚合行，每项含
+    snapshot_date / current_value / cost_amount / profit_loss。
+
+    :return: {count, start_date, end_date, latest_value, latest_profit_loss,
+              latest_profit_loss_rate, max_value, min_value, max_drawdown,
+              value_change, profit_loss_change}
+              空序列返回 {count: 0}；单点 max_drawdown 为 None
+    """
+    if not rows:
+        return {'count': 0}
+
+    sorted_rows = sorted(rows, key=lambda r: str(r.get('snapshot_date')))
+    values = [_f(r.get('current_value')) for r in sorted_rows]
+    first = sorted_rows[0]
+    latest = sorted_rows[-1]
+
+    # 组合级最新盈亏率 = 最新总盈亏 / 最新总成本 × 100
+    latest_cost = _f(latest.get('cost_amount'))
+    latest_pl = _f(latest.get('profit_loss'))
+    latest_rate = round(latest_pl / latest_cost * 100, 2) if latest_cost > 0 else 0.0
+
+    return {
+        'count': len(sorted_rows),
+        'start_date': str(first.get('snapshot_date')),
+        'end_date': str(latest.get('snapshot_date')),
+        'latest_value': _f(latest.get('current_value')),
+        'latest_profit_loss': latest_pl,
+        'latest_profit_loss_rate': latest_rate,
+        'max_value': max(values),
+        'min_value': min(values),
+        'max_drawdown': calc_max_drawdown(values),
+        'value_change': round(_f(latest.get('current_value')) - _f(first.get('current_value')), 2),
+        'profit_loss_change': round(_f(latest.get('profit_loss')) - _f(first.get('profit_loss')), 2),
+    }

@@ -3,6 +3,7 @@ import Layout from '@/components/Layout.vue'
 import TaskManage from '@/views/TaskManage.vue'
 import FundManage from '@/views/FundManage.vue'
 import FundBuyer from '@/views/FundBuyer.vue'
+import FundSeller from '@/views/FundSeller.vue'
 import FundNavHistory from '@/views/FundNavHistory.vue'
 import PortfolioBoard from '@/views/PortfolioBoard.vue'
 import SystemLog from '@/views/SystemLog.vue'
@@ -39,6 +40,12 @@ const routes = [
         name: 'FundBuyer',
         component: FundBuyer,
         meta: { title: '基金买入流水', sort: 20 }
+      },
+      {
+        path: '/sellers',
+        name: 'FundSeller',
+        component: FundSeller,
+        meta: { title: '基金卖出流水', sort: 25 }
       },
       {
         path: '/funds',
