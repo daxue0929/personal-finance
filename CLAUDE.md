@@ -96,8 +96,8 @@ MySQL 外部实例。表结构在 `sql/struct/`，存储过程在 `sql/program/`
 执行 `/feature-dev` 时，附加以下强制步骤：
 
 1. **PRD 生成**（Discovery 阶段）：必须先调用 `/create-prd` 输出结构化需求文档，明确功能目标、用户故事、验收标准。
-2. **设计规范**（Architecture Design 阶段）：若涉及前端界面，必须先调用 `/frontend-design` 输出 `DESIGN.md`，包含色彩、字体、组件规范。
-3. **质量门禁**（Quality Review 阶段）：必须重点检查实现是否符合 `DESIGN.md` 规范，不符合则返工。
+2. **设计规范**（Architecture Design 阶段）：若涉及前端界面，必须先调用 `/frontend-design` 输出 `tasks/design-[feature].md`（`[feature]` 取 kebab-case 功能名，如 `design-fund-seller.md`），包含色彩、字体、组件规范。
+3. **质量门禁**（Quality Review 阶段）：必须重点检查实现是否符合 `tasks/design-[feature].md` 规范，不符合则返工。
 
 可用相关技能：`/create-prd`、`/generate-tasks`、`/implement-tasks`、`/frontend-design`。
 

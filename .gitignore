@@ -70,11 +70,13 @@ frontend/.vite/
 # 忽略 .claude 目录下除了 plans 和 skills 之外的所有直接内容
 .claude/*
 !.claude/plans/
+!.claude/commands/
 !.claude/skills/
 
 # 确保 plans 和 skills 下的所有深层内容都被追踪
 !.claude/plans/**/*
 !.claude/skills/**/*
+!.claude/commands/**/*
 
 # 单独忽略 settings.local.json（如果它恰好被放行）
 .claude/settings.local.json
