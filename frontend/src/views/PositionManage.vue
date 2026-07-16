@@ -5,7 +5,7 @@
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
         <el-form :model="searchForm" inline>
           <el-form-item label="基金代码">
-            <el-input v-model="searchForm.fund_code" placeholder="基金代码" clearable style="width: 160px;" @keyup.enter="handleSearch" />
+            <FundSelect v-model="searchForm.fund_code" width="200px" placeholder="请选择基金" @select="handleSearch" />
           </el-form-item>
           <el-form-item label="基金名称">
             <el-input v-model="searchForm.fund_name" placeholder="基金名称" clearable style="width: 180px;" @keyup.enter="handleSearch" />
@@ -80,17 +80,7 @@
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑持仓' : '新增持仓'" width="500px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="基金代码" required>
-          <el-select
-            v-model="form.fund_code"
-            placeholder="请选择基金"
-            filterable
-            remote
-            :remote-method="searchFunds"
-            style="width: 100%;"
-            :disabled="isEdit"
-          >
-            <el-option v-for="f in fundOptions" :key="f.fund_code" :label="`${f.fund_code} - ${f.fund_name}`" :value="f.fund_code" />
-          </el-select>
+          <FundSelect v-model="form.fund_code" :disabled="isEdit" placeholder="请选择基金" @select="onFundSelect" />
         </el-form-item>
         <el-form-item label="基金名称">
           <el-input v-model="form.fund_name" disabled />
@@ -117,10 +107,11 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { portfolioApi, fundApi } from '@/api'
+import { portfolioApi } from '@/api'
+import FundSelect from '@/components/FundSelect.vue'
 
 const list = ref([])
 const loading = ref(false)
@@ -133,8 +124,6 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
 const form = ref({ fund_code: '', fund_name: '', shares: 0, cost_price: 0, current_price: 0, buy_date: '' })
-const fundOptions = ref([])
-const funds = ref([])
 
 const fmt = (v, digits = 2) => (v != null ? Number(v).toFixed(digits) : '-')
 // 本地日期（避免 toISOString 在北京时间凌晨取到昨天）
@@ -159,27 +148,6 @@ const fetchList = async () => {
   } finally {
     loading.value = false
   }
-}
-
-const fetchFunds = async () => {
-  try {
-    const res = await fundApi.getFunds({ page: 1, page_size: 1000 })
-    funds.value = res.data || []
-    fundOptions.value = funds.value.slice(0, 20)
-  } catch (e) {
-    console.error('获取基金列表失败', e)
-  }
-}
-
-const searchFunds = (query) => {
-  if (!query) {
-    fundOptions.value = funds.value.slice(0, 20)
-    return
-  }
-  const q = query.toLowerCase()
-  fundOptions.value = funds.value
-    .filter(f => f.fund_code.toLowerCase().includes(q) || f.fund_name.includes(query))
-    .slice(0, 20)
 }
 
 const handleSearch = () => { currentPage.value = 1; fetchList() }
@@ -243,19 +211,19 @@ const handleDelete = async (row) => {
   }
 }
 
-// 选择基金时自动带出名称和最新净值
-watch(() => form.value.fund_code, (code) => {
-  if (code && !isEdit.value) {
-    const f = funds.value.find(x => x.fund_code === code)
-    if (f) {
-      form.value.fund_name = f.fund_name
-      form.value.current_price = f.net_asset_value || 0
-    }
+// 选择基金时自动带出名称和最新净值（FundSelect 抛出完整 fund 对象）
+const onFundSelect = (fund) => {
+  if (isEdit.value) return
+  if (!fund) {
+    form.value.fund_name = ''
+    form.value.current_price = 0
+    return
   }
-})
+  form.value.fund_name = fund.fund_name
+  form.value.current_price = fund.net_asset_value || 0
+}
 
 onMounted(() => {
-  fetchFunds()
   fetchList()
 })
 </script>

@@ -142,16 +142,7 @@
       width="500px">
       <el-form :model="positionForm" label-width="100px">
         <el-form-item label="基金代码" required>
-          <el-select
-            v-model="positionForm.fund_code"
-            placeholder="请选择基金"
-            filterable
-            remote
-            :remote-method="searchFunds"
-            style="width: 100%;"
-          >
-            <el-option v-for="fund in fundOptions" :key="fund.fund_code" :label="`${fund.fund_code} - ${fund.fund_name}`" :value="fund.fund_code" />
-          </el-select>
+          <FundSelect v-model="positionForm.fund_code" placeholder="请选择基金" @select="onPositionFundSelect" />
         </el-form-item>
         <el-form-item label="基金名称">
           <el-input v-model="positionForm.fund_name" disabled />
@@ -180,7 +171,8 @@
 <script setup>import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Folder, Box, Edit, Delete } from '@element-plus/icons-vue';
-import { portfolioApi, fundApi } from '@/api';
+import { portfolioApi } from '@/api';
+import FundSelect from '@/components/FundSelect.vue';
 // 数据
 const portfolios = ref([]);
 const loading = ref(false);
@@ -207,9 +199,6 @@ const positionForm = ref({
  current_price: 0,
  buy_date: ''
 });
-// 基金选项
-const fundOptions = ref([]);
-const funds = ref([]);
 // 获取组合列表
 const fetchPortfolios = async () => {
  loading.value = true;
@@ -243,27 +232,6 @@ const fetchPortfolioPositions = async (portfolio) => {
  portfolio.total_cost = 0;
  portfolio.total_profit_loss = 0;
  }
-};
-// 获取基金列表
-const fetchFunds = async () => {
- try {
- const result = await fundApi.getFunds({ page: 1, page_size: 1000 });
- funds.value = result.data || [];
- fundOptions.value = funds.value.slice(0, 20);
- }
- catch (error) {
- console.error('获取基金列表失败:', error);
- }
-};
-// 搜索基金
-const searchFunds = async (query) => {
- if (!query) {
- fundOptions.value = funds.value.slice(0, 20);
- return;
- }
- const filtered = funds.value.filter(f => f.fund_code.toLowerCase().includes(query.toLowerCase()) ||
- f.fund_name.includes(query));
- fundOptions.value = filtered.slice(0, 20);
 };
 // 显示创建组合对话框
 const showCreatePortfolioDialog = () => {
@@ -416,18 +384,14 @@ const formatNumber = (num) => {
  return '0.00';
  return Number(num).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
-// 监听基金代码变化：添加持仓时若该基金已有持仓记录，带出已有数据（只建关联，不新建持仓）
-import { watch } from 'vue';
-watch(() => positionForm.value.fund_code, async (newCode) => {
- if (!newCode) {
+// 选择基金时联动：添加持仓若该基金已有持仓记录，带出已有数据（只建关联，不新建持仓）
+const onPositionFundSelect = async (fund) => {
+ if (!fund) {
  positionForm.value.fund_name = '';
  existingPositionId.value = null;
  return;
  }
- const fund = funds.value.find(f => f.fund_code === newCode);
- if (fund) {
  positionForm.value.fund_name = fund.fund_name;
- }
  // 编辑模式不查已有持仓
  if (isEditPosition.value) {
  existingPositionId.value = null;
@@ -435,7 +399,7 @@ watch(() => positionForm.value.fund_code, async (newCode) => {
  }
  // 添加模式：查该基金是否已有持仓，有则带出
  try {
- const res = await portfolioApi.getPositionByFund(newCode);
+ const res = await portfolioApi.getPositionByFund(fund.fund_code);
  const existing = res.data;
  if (existing) {
  existingPositionId.value = existing.id;
@@ -447,15 +411,14 @@ watch(() => positionForm.value.fund_code, async (newCode) => {
  }
  else {
  existingPositionId.value = null;
- if (fund) positionForm.value.current_price = fund.net_asset_value || 0;
+ positionForm.value.current_price = fund.net_asset_value || 0;
  }
  } catch (e) {
  existingPositionId.value = null;
  }
-});
+};
 onMounted(() => {
  fetchPortfolios();
- fetchFunds();
 });
 </script>
 

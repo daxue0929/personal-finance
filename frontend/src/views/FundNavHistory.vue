@@ -5,20 +5,7 @@
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
         <el-form :model="searchForm" inline>
           <el-form-item label="基金代码">
-            <el-select
-              v-model="searchForm.fund_code"
-              placeholder="请选择基金"
-              style="width: 250px;"
-              clearable
-              @change="handleSearch"
-            >
-              <el-option
-                v-for="fund in fundList"
-                :key="fund.fund_code"
-                :label="`${fund.fund_name} (${fund.fund_code})`"
-                :value="fund.fund_code"
-              />
-            </el-select>
+            <FundSelect v-model="searchForm.fund_code" width="250px" placeholder="请选择基金" @select="handleSearch" />
           </el-form-item>
           <el-form-item label="开始日期">
             <el-date-picker
@@ -95,11 +82,11 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { fundNavApi, fundApi } from '@/api'
+import { fundNavApi } from '@/api'
+import FundSelect from '@/components/FundSelect.vue'
 
 const route = useRoute()
 
-const fundList = ref([])
 const navHistory = ref([])
 const loading = ref(false)
 
@@ -114,16 +101,6 @@ const searchForm = ref({
   start_date: '',
   end_date: ''
 })
-
-// 获取基金列表
-const fetchFundList = async () => {
-  try {
-    const result = await fundApi.getFunds({ page: 1, page_size: 100 })
-    fundList.value = result.data
-  } catch (error) {
-    ElMessage.error('获取基金列表失败')
-  }
-}
 
 // 获取基金历史净值列表
 const fetchNavHistory = async () => {
@@ -186,14 +163,11 @@ watch(() => route.query.fund_code, (newCode) => {
 })
 
 onMounted(() => {
-  // 获取基金列表用于下拉选择
-  fetchFundList()
-  
-  // 如果路由中有基金代码参数，自动填充并搜索
+  // 如果路由中有基金代码参数，自动填充（FundSelect 会自动回显 label）
   if (route.query.fund_code) {
     searchForm.value.fund_code = route.query.fund_code
   }
-  
+
   // 初始加载（默认查询所有基金的历史净值）
   fetchNavHistory()
 })

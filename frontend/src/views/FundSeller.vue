@@ -5,7 +5,7 @@
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
         <el-form :model="searchForm" inline>
           <el-form-item label="基金代码">
-            <el-input v-model="searchForm.fund_code" placeholder="请输入基金代码" clearable />
+            <FundSelect v-model="searchForm.fund_code" width="200px" placeholder="请选择基金" @select="handleSearch" />
           </el-form-item>
           <el-form-item label="基金名称">
             <el-input v-model="searchForm.fund_name" placeholder="请输入基金名称" clearable />
@@ -150,9 +150,7 @@
     >
       <el-form :model="formData" label-width="120px">
         <el-form-item label="选择基金" required>
-          <el-select v-model="formData.fund_code" placeholder="请搜索选择基金" filterable remote :remote-method="(query) => searchFunds(query)" @change="handleFundSelectChange" style="width: 100%;">
-            <el-option v-for="fund in fundOptions" :key="fund.id" :label="`${fund.fund_code} - ${fund.fund_name}`" :value="fund.fund_code" />
-          </el-select>
+          <FundSelect v-model="formData.fund_code" placeholder="请搜索选择基金" @select="onFormFundSelect" />
         </el-form-item>
         <el-form-item label="基金名称">
           <el-input v-model="formData.fund_name" placeholder="自动填充" disabled />
@@ -205,11 +203,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled, Download } from '@element-plus/icons-vue'
-import { sellerApi, fundApi, taskApi } from '@/api'
+import { sellerApi, taskApi } from '@/api'
+import FundSelect from '@/components/FundSelect.vue'
 
 const sellers = ref([])
-const funds = ref([])
-const fundOptions = ref([])
 const loading = ref(false)
 const refreshing = ref(false)
 const dialogVisible = ref(false)
@@ -507,41 +504,11 @@ onMounted(() => {
     sortOrder.value = savedSortOrder
   }
   fetchSellers()
-  fetchFunds()
 })
 
-// 获取基金列表
-const fetchFunds = async () => {
-  try {
-    const result = await fundApi.getFunds({ page: 1, page_size: 1000 })
-    funds.value = result.data || []
-    fundOptions.value = funds.value.slice(0, 20)
-  } catch (error) {
-    console.error('获取基金列表失败:', error)
-  }
-}
-
-// 选择基金时自动填入基金代码和名称
-const handleFundSelectChange = (fundCode) => {
-  const fund = funds.value.find(f => f.fund_code === fundCode)
-  if (fund) {
-    formData.value.fund_name = fund.fund_name
-  } else {
-    formData.value.fund_name = ''
-  }
-}
-
-// 搜索基金
-const searchFunds = async (query) => {
-  if (!query) {
-    fundOptions.value = funds.value.slice(0, 20)
-    return
-  }
-  const filtered = funds.value.filter(f =>
-    f.fund_code.toLowerCase().includes(query.toLowerCase()) ||
-    f.fund_name.includes(query)
-  )
-  fundOptions.value = filtered.slice(0, 20)
+// 选择基金时自动填入基金名称（FundSelect 抛出完整 fund 对象）
+const onFormFundSelect = (fund) => {
+  formData.value.fund_name = fund ? fund.fund_name : ''
 }
 </script>
 

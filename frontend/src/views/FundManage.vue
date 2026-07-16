@@ -5,19 +5,7 @@
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
         <el-form :model="searchForm" inline>
           <el-form-item label="基金">
-            <el-select
-              v-model="searchForm.selectedFund"
-              filterable
-              remote
-              clearable
-              reserve-keyword
-              placeholder="输入代码或名称搜索"
-              :remote-method="remoteSearchFund"
-              :loading="fundSearchLoading"
-              style="width: 280px;"
-            >
-              <el-option v-for="o in fundOptions" :key="o.value" :label="o.label" :value="o.value" />
-            </el-select>
+            <FundSelect v-model="searchForm.selectedFund" width="280px" placeholder="输入代码或名称搜索" @select="handleSearch" />
           </el-form-item>
           <el-form-item label="基金类型">
             <el-select v-model="searchForm.fund_type" placeholder="请选择类型" clearable style="width: 120px;">
@@ -212,6 +200,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fundApi, dipPlanApi } from '@/api'
+import FundSelect from '@/components/FundSelect.vue'
 
 const router = useRouter()
 
@@ -231,27 +220,6 @@ const searchForm = ref({
   selectedFund: '',   // 下拉搜索框选中的基金代码
   fund_type: ''
 })
-
-// ===== 下拉搜索框（远程实时搜索）=====
-const fundOptions = ref([])      // 下拉选项
-const fundSearchLoading = ref(false)
-
-// 远程搜索基金：输入关键字同时匹配代码或名称（后端 keyword OR 查询）
-const remoteSearchFund = async (query) => {
-  if (!query) { fundOptions.value = []; return }
-  fundSearchLoading.value = true
-  try {
-    const res = await fundApi.getFunds({ keyword: query, page: 1, page_size: 50 })
-    fundOptions.value = (res.data || []).map(f => ({
-      label: `${f.fund_code} - ${f.fund_name}`,
-      value: f.fund_code
-    }))
-  } catch (e) {
-    fundOptions.value = []
-  } finally {
-    fundSearchLoading.value = false
-  }
-}
 
 const formData = ref({
   fund_code: '',
@@ -474,7 +442,6 @@ const resetSearch = () => {
     selectedFund: '',
     fund_type: ''
   }
-  fundOptions.value = []
   currentPage.value = 1
   fetchFunds()
 }
