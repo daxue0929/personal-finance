@@ -67,10 +67,17 @@ frontend/.vite/
 *.sw?
 
 # Claude Code (local agent state - not for version control)
+# 忽略 .claude 目录下除了 plans 和 skills 之外的所有直接内容
 .claude/*
-.claude/settings.local.json
+!.claude/plans/
 !.claude/skills/
-!.claude/skills/**
+
+# 确保 plans 和 skills 下的所有深层内容都被追踪
+!.claude/plans/**/*
+!.claude/skills/**/*
+
+# 单独忽略 settings.local.json（如果它恰好被放行）
+.claude/settings.local.json
 
 # MCP 配置（含本地数据库连接凭证，勿提交）
 .mcp.json
