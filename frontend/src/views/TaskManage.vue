@@ -397,13 +397,22 @@ const fetchHistory = async () => {
   }
 }
 
-// 复制 trace_id
+// 复制 trace_id（含非 HTTPS 环境降级，参照 SystemLog copyToClipboard）
 const copyTraceId = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
     ElMessage.success('已复制 TraceID')
   } catch (e) {
-    ElMessage.warning('复制失败，请手动复制')
+    // 降级方案：非 HTTPS 环境 navigator.clipboard 不可用
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    ElMessage.success('已复制 TraceID')
   }
 }
 
