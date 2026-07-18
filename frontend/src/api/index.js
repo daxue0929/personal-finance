@@ -95,9 +95,18 @@ export const taskApi = {
   // 删除任务
   deleteTask: (id) => api.delete(`/tasks/${id}`),
 
-  // 立即执行任务
+  // 立即执行任务（异步：立即返回 triggered，不再同步等任务跑完）
   runTask: (taskFunc, forceRun = false) =>
     api.post(`/task/run/${taskFunc}`, { force_run: forceRun }),
+
+  // 查询任务执行记录列表（执行计划弹窗，分页+task_func/status 过滤）
+  getRunHistory: (params) => api.get('/task-records', { params }),
+
+  // 查询单条执行记录（轮询执行状态用）
+  getRunStatus: (recordId) => api.get(`/task-records/${recordId}`),
+
+  // 清理 N 天前的执行记录
+  cleanRunHistory: (days) => api.delete('/task-records', { params: { days } }),
 
   // 获取调度器状态
   getStatus: () => api.get('/status')

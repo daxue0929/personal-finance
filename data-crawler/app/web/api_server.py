@@ -9,7 +9,7 @@ import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage
 from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
@@ -28,6 +28,7 @@ _user_storage = UserStorage()
 _index_storage = IndexInfoStorage()
 _position_snapshot_storage = PositionDailySnapshotStorage()
 _dip_plan_storage = FundDipPlanStorage()
+_run_record_storage = TaskRunRecordStorage()
 
 # 会话签名密钥（登录态 Cookie 鉴权依赖）。生产环境必须在 .env 设置 SECRET_KEY
 app.secret_key = os.getenv('SECRET_KEY')
@@ -332,7 +333,7 @@ def trigger_crawl():
 @app.route('/api/task/run/<task_func>', methods=['POST'])
 @log_request
 def run_task(task_func):
-    """立即执行指定任务（转发到调度器进程）"""
+    """立即执行指定任务（异步：转发到调度器，立即返回 triggered+record_id+trace_id）"""
     try:
         force_run = False
         try:
@@ -341,7 +342,13 @@ def run_task(task_func):
         except Exception:
             pass
 
-        data, code = scheduler_proxy.run_task(task_func, force_run=force_run)
+        triggered_by = 'manual'
+        try:
+            triggered_by = g.user.get('username', 'manual')
+        except Exception:
+            pass
+
+        data, code = scheduler_proxy.run_task(task_func, force_run=force_run, triggered_by=triggered_by)
         return jsonify(data), code
     except Exception as e:
         logger.error(f"触发任务失败: {e}")
@@ -399,6 +406,9 @@ def get_tasks():
             # 一次性从调度器进程获取所有任务状态（避免 N+1 HTTP 调用）
             all_jobs = scheduler_proxy.get_all_jobs() or {}
 
+            # 一次性查询所有运行中任务（避免 N+1 DB 调用）
+            running_funcs = set(_run_record_storage.get_running_task_funcs())
+
             result = []
             for task in tasks:
                 job_status = all_jobs.get(task.task_func)
@@ -410,6 +420,7 @@ def get_tasks():
                     'enabled': task.enabled == 1,
                     'description': task.description,
                     'next_run_time': job_status['next_run_time'] if job_status else None,
+                    'running': task.task_func in running_funcs,
                     'create_time': str(task.create_time),
                     'update_time': str(task.update_time)
                 })
@@ -539,6 +550,90 @@ def delete_task(task_id):
             return jsonify({'error': '任务删除失败'}), 500
     except Exception as e:
         logger.error(f"删除任务失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/task-records', methods=['GET'])
+@log_request
+def get_task_records():
+    """获取任务执行记录列表（支持 task_func/status 过滤 + 分页，供前端「执行计划」弹窗）"""
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+        task_func = request.args.get('task_func', '')
+        status = request.args.get('status', '')
+
+        records, total = _run_record_storage.get_records_with_pagination(
+            task_func=task_func if task_func else None,
+            status=status if status else None,
+            page=page, page_size=page_size
+        )
+
+        data = [{
+            'id': r.id,
+            'task_func': r.task_func,
+            'task_name': r.task_name,
+            'trigger_type': r.trigger_type,
+            'status': r.status,
+            'trace_id': r.trace_id,
+            'triggered_by': r.triggered_by,
+            'start_time': str(r.start_time) if r.start_time else None,
+            'end_time': str(r.end_time) if r.end_time else None,
+            'duration_ms': r.duration_ms,
+            'error_message': r.error_message
+        } for r in records]
+
+        return jsonify({
+            'data': data, 'total': total, 'page': page, 'page_size': page_size
+        }), 200
+    except Exception as e:
+        logger.error(f"获取任务执行记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/task-records/<int:record_id>', methods=['GET'])
+@log_request
+def get_task_record(record_id):
+    """获取单条任务执行记录（前端轮询执行状态用）"""
+    try:
+        r = _run_record_storage.get_record_by_id(record_id)
+        if not r:
+            return jsonify({'error': '记录不存在'}), 404
+        return jsonify({
+            'id': r.id,
+            'task_func': r.task_func,
+            'task_name': r.task_name,
+            'trigger_type': r.trigger_type,
+            'status': r.status,
+            'trace_id': r.trace_id,
+            'triggered_by': r.triggered_by,
+            'start_time': str(r.start_time) if r.start_time else None,
+            'end_time': str(r.end_time) if r.end_time else None,
+            'duration_ms': r.duration_ms,
+            'error_message': r.error_message
+        }), 200
+    except Exception as e:
+        logger.error(f"获取任务执行记录失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/task-records', methods=['DELETE'])
+@log_request
+@admin_required
+def clean_task_records():
+    """清理 N 天前的任务执行记录（RUNNING 不删，防误删在跑任务）"""
+    try:
+        days = int(request.args.get('days', 30))
+        if days < 1:
+            return jsonify({'error': '保留天数必须大于 0'}), 400
+        deleted = _run_record_storage.clean_records_before(days)
+        return jsonify({
+            'success': True,
+            'deleted': deleted,
+            'message': f'已清理 {days} 天前的执行记录 {deleted} 条'
+        }), 200
+    except Exception as e:
+        logger.error(f"清理任务执行记录失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

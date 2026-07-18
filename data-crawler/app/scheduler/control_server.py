@@ -48,26 +48,34 @@ def create_control_app(scheduler):
 
     @app.route('/internal/task/run/<task_func>', methods=['POST'])
     def run_task(task_func):
-        """立即执行指定任务（同步阻塞，执行完返回）"""
+        """立即执行指定任务（异步：立即返回 triggered+record_id+trace_id，后台线程跑）"""
         try:
-            force_run = False
-            try:
-                if request.json:
-                    force_run = request.json.get('force_run', False)
-            except Exception:
-                pass
+            body = request.get_json(silent=True) or {}
+            force_run = body.get('force_run', False)
+            triggered_by = body.get('triggered_by', 'manual')
 
-            success = scheduler.run_job_now(task_func, force_run=force_run)
-            if success:
-                return jsonify({
-                    'success': True,
-                    'message': f'任务 {task_func} 已触发' + (' (force_run)' if force_run else '')
-                }), 200
-            else:
+            result = scheduler.run_job_now(task_func, force_run=force_run, triggered_by=triggered_by)
+            if result is False:
                 return jsonify({
                     'success': False,
                     'message': f'任务 {task_func} 未注册'
                 }), 404
+            if isinstance(result, dict) and result.get('rejected'):
+                # 任务正在运行，不触发不记表，前端提示
+                # 用 200 返回（非 409）：前端 axios 拦截器对非 2xx 走 reject，会跳过 body 里的 rejected 字段
+                return jsonify({
+                    'success': False,
+                    'rejected': True,
+                    'message': result.get('message', '任务正在运行，请等待完成')
+                }), 200
+            # 异步触发成功，立即返回 record_id + trace_id 供前端轮询
+            return jsonify({
+                'success': True,
+                'status': 'TRIGGERED',
+                'record_id': result.get('record_id'),
+                'trace_id': result.get('trace_id'),
+                'message': f'任务 {task_func} 已触发'
+            }), 200
         except Exception as e:
             logger.error(f"触发任务失败: {e}")
             return jsonify({'success': False, 'message': str(e)}), 500

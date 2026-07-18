@@ -65,11 +65,12 @@ def stop_scheduler():
         return {'success': False, 'message': '调度器不可达'}, 502
 
 
-def run_task(task_func, force_run=False):
-    """立即执行指定任务（同步等待执行完成）"""
+def run_task(task_func, force_run=False, triggered_by='manual'):
+    """立即执行指定任务（异步：scheduler 立即返回 triggered，不再等任务跑完）"""
     try:
         return _request('POST', f'/internal/task/run/{task_func}',
-                        json={'force_run': force_run}, timeout=TASK_TIMEOUT)
+                        json={'force_run': force_run, 'triggered_by': triggered_by},
+                        timeout=CTRL_TIMEOUT)
     except SchedulerUnavailable:
         return {'success': False, 'message': '调度器不可达'}, 502
 
