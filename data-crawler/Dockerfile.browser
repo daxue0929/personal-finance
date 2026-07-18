@@ -1,15 +1,15 @@
 # 独立 Playwright 浏览器服务镜像
-# 基于微软官方 playwright 镜像（含 chromium 二进制），加装 socat 做 CDP 端口转发。
+# 基于微软官方 playwright 镜像（含 chromium 二进制）。
 #
-# 背景：chrome headless 的 --remote-debugging-address=0.0.0.0 不生效，CDP 只绑 127.0.0.1，
-# 容器外（宿主机或其它容器）无法直连。用 socat 把 0.0.0.0:9222 转发到 chrome 的
-# 127.0.0.1:9223，使两种部署形态都能访问：
+# 背景：chrome headless 有三个限制导致容器间（scheduler 连 browser:9222）无法直连--
+# 1. --remote-debugging-address=0.0.0.0 不生效，CDP 只绑 127.0.0.1
+# 2. /json/version 拒绝非 localhost 的 Host 头
+# 3. /json/version 返回的 webSocketDebuggerUrl 写死 127.0.0.1:9223
+# 故用 node HTTP 反向代理（见 browser-entrypoint.sh）监听 0.0.0.0:9222 转发到 chrome 的
+# 127.0.0.1:9223，并改写 Host 头与 webSocketDebuggerUrl。两种部署形态都能访问：
 #   - 本地开发：scheduler 在宿主机跑，PLAYWRIGHT_CDP_URL=http://127.0.0.1:9222（经 ports 映射）
-#   - 生产：scheduler 在另一容器，PLAYWRIGHT_CDP_URL=http://browser:9222（经 expose/同 network）
+#   - 生产：scheduler 在另一容器，PLAYWRIGHT_CDP_URL=http://browser:9222（同 network）
 FROM mcr.microsoft.com/playwright:v1.49.1-noble
-
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends socat \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY browser-entrypoint.sh /browser-entrypoint.sh
 RUN chmod +x /browser-entrypoint.sh

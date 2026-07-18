@@ -1,9 +1,12 @@
 #!/bin/sh
 # browser 服务启动脚本
 # 1. 启动 chrome headless 监听 127.0.0.1:9223（CDP 端口，chrome 只绑 loopback）
-# 2. node HTTP 反向代理把 0.0.0.0:9222 转发到 127.0.0.1:9223，并改写 Host 头为 127.0.0.1:9223
-#    （chrome 131 对 /json/version 有 Host 头检查，拒绝非 localhost 的 Host，如容器间的 browser:9222；
-#     socat 是 TCP 透传不改 Host，故用 node 代理改写。WebSocket 升级也由 http 代理透传）
+# 2. node HTTP 反向代理把 0.0.0.0:9222 转发到 127.0.0.1:9223：
+#    - 改写 Host 头为 127.0.0.1:9223（chrome 131 对 /json/version 有 Host 头检查，
+#      拒绝非 localhost 的 Host，如容器间的 browser:9222）
+#    - 改写 /json/version 响应里的 webSocketDebuggerUrl（127.0.0.1:9223 -> 请求方 host:9222），
+#      使 playwright 连 9222（代理）而非直连 9223
+#    - WebSocket 升级经代理转发到 9223
 # 3. 代理前台运行，退出则容器退出
 
 set -e

@@ -22,7 +22,7 @@ Docker Compose 部署三个容器，同在 `fund-network` bridge 网络：
 
 - Docker + Docker Compose
 - MySQL 实例可访问（外部或同机）
-- 能联网拉基础镜像（python:3.12-slim、mcr.microsoft.com/playwright）和装 apt 包（socat 等，已在镜像内）
+- 能联网拉基础镜像（python:3.12-slim、mcr.microsoft.com/playwright）
 
 ### 2. 拉取代码
 
@@ -130,7 +130,7 @@ docker compose logs --tail 60 scheduler | grep "抓取成功\|基金详情抓取
 
 ## browser 服务的实现细节（踩坑记录）
 
-browser 容器用自定义镜像 `fund-browser:latest`（`Dockerfile.browser` + `browser-entrypoint.sh`），不是直接用微软官方镜像。原因：chrome headless 有两个限制，导致容器间（scheduler 连 `browser:9222`）连接失败。
+browser 容器用自定义镜像 `fund-browser:latest`（`Dockerfile.browser` + `browser-entrypoint.sh`），不是直接用微软官方镜像。原因：chrome headless 有三个限制，导致容器间（scheduler 连 `browser:9222`）连接失败。
 
 ### 限制 1：chrome 只绑 127.0.0.1
 
@@ -150,7 +150,7 @@ chrome 131 的 `/json/version` 端点有 DNS rebinding 防护，拒绝 Host 头�
 
 **解法**：node 代理对 `/json/version` 响应做 body 改写，把 `ws://127.0.0.1:9223/...` 换成 `ws://<请求方Host>:9222/...`，playwright 改连 9222（代理），代理转发 WebSocket 到 9223。
 
-综上，`browser-entrypoint.sh` 用 node HTTP 反向代理（替代最初的 socat）同时解决三个限制。本地（arm64）与服务器（amd64）均验证 `connect_over_cdp` 抓取通过。
+综上，`browser-entrypoint.sh` 用 node HTTP 反向代理同时解决三个限制。本地（arm64）与服务器（amd64）均验证 `connect_over_cdp` 抓取通过。
 
 ## 本地开发
 

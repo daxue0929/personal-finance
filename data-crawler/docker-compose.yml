@@ -47,10 +47,9 @@ services:
       - fund-network
 
   browser:
-    # 自定义镜像：基于微软官方 playwright 镜像 + socat。
-    # chrome headless 的 --remote-debugging-address=0.0.0.0 不生效，CDP 只绑 127.0.0.1，
-    # 故用 socat 把 0.0.0.0:9222 转发到 chrome 的 127.0.0.1:9223，使容器外可访问。
-    # 构建见 Dockerfile.browser。
+    # 自定义镜像：基于微软官方 playwright 镜像 + node HTTP 反向代理（见 Dockerfile.browser / browser-entrypoint.sh）。
+    # chrome headless 只绑 127.0.0.1 且对 /json/version 有 Host 头检查，node 代理转发 0.0.0.0:9222 -> 127.0.0.1:9223
+    # 并改写 Host 头与 webSocketDebuggerUrl，使容器外可访问 CDP。
     image: fund-browser:latest
     container_name: fund-crawler-browser
     # ports：本地开发时 scheduler 在宿主机跑，经此映射用 http://127.0.0.1:9222 连接；
