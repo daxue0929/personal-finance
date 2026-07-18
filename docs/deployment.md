@@ -1,0 +1,203 @@
+# 部署文档
+
+本文档记录 personal-finance 在服务器上的完整部署过程，含 Playwright 浏览器服务的部署细节与踩坑记录。
+
+## 架构概览
+
+Docker Compose 部署三个容器，同在 `fund-network` bridge 网络：
+
+| 容器 | 镜像 | 端口 | 职责 |
+|------|------|------|------|
+| `fund-crawler-web` | `fund-crawler:latest`（本地构建） | 5000（对外） | Flask CRUD + 控制接口转发 |
+| `fund-crawler-scheduler` | `fund-crawler:latest` | 5001（仅容器内） | APScheduler + 爬虫 + Playwright 抓取 + 内部控制 Flask |
+| `fund-crawler-browser` | `fund-browser:latest`（本地构建） | 9222（CDP，对外+容器间） | Playwright 浏览器服务（chrome + node 代理） |
+
+- web/scheduler 共用 `fund-crawler` 镜像（`data-crawler/Dockerfile`），仅启动命令不同。
+- browser 是独立镜像（`data-crawler/Dockerfile.browser`），基于微软官方 `mcr.microsoft.com/playwright` + node 代理。
+- scheduler 经 `http://browser:9222` 连 browser 容器抓取网页。
+
+## 首次部署
+
+### 1. 准备服务器环境
+
+- Docker + Docker Compose
+- MySQL 实例可访问（外部或同机）
+- 能联网拉基础镜像（python:3.12-slim、mcr.microsoft.com/playwright）和装 apt 包（socat 等，已在镜像内）
+
+### 2. 拉取代码
+
+```bash
+git clone <repo> personal-finance
+cd personal-finance/data-crawler
+```
+
+### 3. 配置 `.env`（服务器本地，不入库）
+
+复制 `.env.example` 为 `.env`，填实际值：
+
+```bash
+cp .env.example .env
+vi .env
+```
+
+关键字段：
+
+| 字段 | 服务器值 | 说明 |
+|------|---------|------|
+| `MYSQL_HOST` | 实际 MySQL 地址 | |
+| `MYSQL_PASSWORD` | 实际密码 | |
+| `SECRET_KEY` | 随机值 | `python -c "import secrets; print(secrets.token_urlsafe(48))"` 生成 |
+| `PLAYWRIGHT_CDP_URL` | `http://browser:9222` | scheduler 在容器内，经 fund-network 用容器名访问 browser |
+
+> **本地开发**时 `PLAYWRIGHT_CDP_URL=http://127.0.0.1:9222`（scheduler 在宿主机跑，browser 容器靠 `ports: 9222:9222` 映射）。见下文「本地开发」。
+
+### 4. 创建 `/etc/timezone` 文件（重要，否则容器起不来）
+
+三个容器都 bind mount `/etc/timezone`。CentOS 等系统默认**没有**这个文件，Docker 会把它当目录创建，导致挂载失败报错：
+
+```
+error mounting "/etc/timezone" ... not a directory: ... trying to mount a directory onto a file
+```
+
+服务器执行一次：
+
+```bash
+# 若 /etc/timezone 是误建的目录，先删
+rm -rf /etc/timezone
+# 建成文件
+echo "Asia/Shanghai" > /etc/timezone
+ls -l /etc/timezone   # 确认是文件（-rw-r--r--），不是目录（drwxr-xr-x）
+```
+
+### 5. 构建镜像
+
+```bash
+# 应用镜像（web/scheduler 共用）
+./deploy.sh    # 会构建 fund-crawler:latest 并启动
+
+# 或单独构建：
+docker build -t fund-crawler:latest .
+
+# browser 镜像（独立，首次必须构建）
+docker build -f Dockerfile.browser -t fund-browser:latest .
+```
+
+> **架构注意**：`fund-browser` 镜像必须在**目标服务器上构建**（产出 amd64）。不要把 Mac（arm64）上构建的镜像传到 x86 服务器，会报 `platform (linux/arm64) does not match (linux/amd64)`。服务器能联网，直接在上面 build 即可。
+
+### 6. 启动
+
+```bash
+docker compose up -d
+docker compose ps    # 三个容器都 Up，browser 为 healthy
+```
+
+## 验证部署
+
+### 容器状态
+
+```bash
+docker compose ps
+# 期望：web/scheduler Up，browser Up (healthy)
+```
+
+### browser CDP 可达（从 scheduler 容器内）
+
+```bash
+docker exec fund-crawler-scheduler python3 -c 'import urllib.request as u; r=u.urlopen("http://browser:9222/json/version",timeout=5); print("status",r.status); print(r.read()[:120])'
+# 期望：status 200，返回含 "Browser": "Chrome/131..."
+```
+
+### 触发 Playwright 抓取任务
+
+`fetch_fund_detail_task` 注册在 task_registry 但**不在 task_schedule 表**（仅手动触发，不被 cron 调度）。通过 web 接口触发：
+
+```bash
+# 1. 登录拿 cookie
+curl -s -c ./cookie.txt -X POST http://localhost:5000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"你的密码"}'
+
+# 2. 触发任务（同步接口，23 只基金约 30-40 秒返回，可加 & 后台跑）
+curl -s -b ./cookie.txt -X POST http://localhost:5000/api/task/run/fetch_fund_detail_task
+# 期望：{"success":true,"message":"任务 fetch_fund_detail_task 已触发"}
+
+# 3. 看抓取日志
+docker compose logs --tail 60 scheduler | grep "抓取成功\|基金详情抓取完成"
+# 期望：每只基金 "抓取成功" + "基金详情抓取完成: 成功 23 只, 失败 0 只"
+```
+
+抓取日志也会写入 `system_log` 表，前端「系统日志」页面可查（按 trace_id 串联某次抓取的完整链路）。
+
+## browser 服务的实现细节（踩坑记录）
+
+browser 容器用自定义镜像 `fund-browser:latest`（`Dockerfile.browser` + `browser-entrypoint.sh`），不是直接用微软官方镜像。原因：chrome headless 有两个限制，导致容器间（scheduler 连 `browser:9222`）连接失败。
+
+### 限制 1：chrome 只绑 127.0.0.1
+
+`--remote-debugging-address=0.0.0.0` 在 chrome headless 下不生效，CDP 只监听容器内 127.0.0.1。容器外（scheduler 容器）直连不上。
+
+**解法**：chrome 监听 127.0.0.1:9223，用 node 代理监听 0.0.0.0:9222 转发到 9223。
+
+### 限制 2：chrome 拒绝非 localhost 的 Host 头
+
+chrome 131 的 `/json/version` 端点有 DNS rebinding 防护，拒绝 Host 头非 localhost 的请求（返回 500）。scheduler 连 `http://browser:9222` 时 Host 是 `browser:9222`，被拒。
+
+**解法**：node 代理转发时把 Host 头改写成 `127.0.0.1:9223`。
+
+### 限制 3：webSocketDebuggerUrl 写死 9223
+
+`/json/version` 返回的 `webSocketDebuggerUrl` 是 `ws://127.0.0.1:9223/...`，playwright 拿到后直连 9223（仅容器内可达），从 scheduler 连失败。
+
+**解法**：node 代理对 `/json/version` 响应做 body 改写，把 `ws://127.0.0.1:9223/...` 换成 `ws://<请求方Host>:9222/...`，playwright 改连 9222（代理），代理转发 WebSocket 到 9223。
+
+综上，`browser-entrypoint.sh` 用 node HTTP 反向代理（替代最初的 socat）同时解决三个限制。本地（arm64）与服务器（amd64）均验证 `connect_over_cdp` 抓取通过。
+
+## 本地开发
+
+本地开发时 scheduler/web 在宿主机命令行跑（不在容器里），browser 容器单独跑。详见 `.claude/skills/service-starter`。
+
+| 项 | 本地开发 | 服务器部署 |
+|----|---------|-----------|
+| scheduler/web | 宿主机 `python -m app.scheduler` / `app.web` | 容器 |
+| browser | 容器（`docker compose up -d browser`） | 容器 |
+| `PLAYWRIGHT_CDP_URL` | `http://127.0.0.1:9222`（ports 映射） | `http://browser:9222`（同 network） |
+| web/scheduler 端口 | 5001/5002（5000 被 AirPlay 占） | 5000/5001 |
+
+本地 `.env` 的 `PLAYWRIGHT_CDP_URL` 设 `http://127.0.0.1:9222`；服务器 `.env` 设 `http://browser:9222`。`.env` 不入库，各环境独立维护。
+
+## 更新部署
+
+代码更新后：
+
+```bash
+cd data-crawler
+git pull
+
+# 若改了 Dockerfile.browser / browser-entrypoint.sh，重建 browser 镜像
+docker build -f Dockerfile.browser -t fund-browser:latest .
+
+# 若改了后端依赖(requirements.txt)或 Dockerfile，重建应用镜像并重启
+./deploy.sh
+
+# 仅改代码(不动依赖)时，重启容器即可（镜像 COPY . . 已含新代码需重建）
+docker compose up -d --build
+```
+
+前端改动需在 `frontend/` 跑 `npm run build` 并提交 `dist/`，服务器 `git pull` 即更新前端。
+
+## 常见问题
+
+### 容器起不来：`/etc/timezone` 挂载失败
+见「首次部署」第 4 步，`echo "Asia/Shanghai" > /etc/timezone` 建成文件。
+
+### browser 镜像架构不匹配（arm64 vs amd64）
+在服务器上直接 `docker build -f Dockerfile.browser`，不要传 Mac 构建的镜像。
+
+### scheduler 连 browser 报 500 / `This does not look like a DevTools server`
+browser 镜像未更新到 node 代理版。`git pull` 后重建 `fund-browser:latest` 并 `docker compose up -d browser`。
+
+### `/api/task/run/fetch_fund_detail_task` 卡住
+该接口同步执行，23 只基金约 30-40 秒返回。可加 `&` 后台触发，或直接看 `docker compose logs scheduler`。
+
+### 抓取日志在哪看
+写入 `system_log` 表，前端「系统日志」页面可查；或 `docker compose logs scheduler | grep 抓取成功`。

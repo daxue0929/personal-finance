@@ -49,17 +49,16 @@ personal-finance/
 
 ## Playwright 浏览器服务
 
-定投系统之外，parser 模块用 Playwright 抓取东方财富 fundf10 等动态渲染网页。浏览器以**独立 Docker 服务**运行（不进应用镜像），scheduler 进程通过 CDP 长连复用。
+parser 模块用 Playwright 抓取东方财富 fundf10 等动态渲染网页。浏览器以**独立 Docker 服务**运行（`fund-browser` 镜像，基于微软官方 playwright 镜像 + node 代理），scheduler 进程通过 CDP 长连复用。
 
-| 环境 | `PLAYWRIGHT_CDP_URL` | 说明 |
-|------|---------------------|------|
-| 本地开发 | `http://127.0.0.1:9222` | scheduler 在宿主机跑，browser 容器靠 `ports: "9222:9222"` 映射，宿主机用 127.0.0.1 访问 |
-| 服务器部署 | `http://browser:9222` | web/scheduler/browser 三容器同在 compose 的 fund-network，scheduler 用容器名 `browser` 访问 |
+| 环境 | `PLAYWRIGHT_CDP_URL` |
+|------|---------------------|
+| 本地开发 | `http://127.0.0.1:9222`（scheduler 在宿主机跑，browser 容器 ports 映射） |
+| 服务器部署 | `http://browser:9222`（三容器同在 fund-network，用容器名访问） |
 
-- `.env` 不提交版本库，各环境独立维护 `PLAYWRIGHT_CDP_URL`。
-- browser 服务用自定义镜像 `fund-browser:latest`（`Dockerfile.browser` + `browser-entrypoint.sh`）：基于微软官方 `mcr.microsoft.com/playwright` 镜像加装 socat。原因是 chrome headless 的 `--remote-debugging-address=0.0.0.0` 不生效（CDP 只绑容器内 127.0.0.1），需 socat 把 0.0.0.0:9222 转发到 chrome 的 127.0.0.1:9223 才能让容器外连接。
-- **服务器首次部署**需先构建镜像：`docker build -f Dockerfile.browser -t fund-browser:latest .`，再 `./deploy.sh` 起三容器。
-- browser 常驻单例 + page 临时（用完关），生命周期管理在 `app/utils/playwright_client.py`（参照 `DatabaseManager`）。本地开发时 browser 容器需先 `docker compose up -d browser` 起着，否则 scheduler 连不上（报连接错误，不崩）。
+- `.env` 不入库，各环境独立维护 `PLAYWRIGHT_CDP_URL`。
+- browser 常驻单例 + page 临时，生命周期在 `app/utils/playwright_client.py`。
+- **完整部署过程、browser 镜像构建、`/etc/timezone` 处理、CDP 踩坑细节见 [`docs/deployment.md`](docs/deployment.md)。**
 
 ## 常用命令
 
