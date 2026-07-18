@@ -1,6 +1,6 @@
 <template>
   <div style="height: 100%; display: flex; flex-direction: column;">
-    <el-card style="flex: 1; margin: 20px; box-shadow: none; border: none;" :body-style="{ padding: '0' }">
+    <el-card style="flex: 1; margin: 20px; box-shadow: none; border: none; overflow: hidden;" :body-style="{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <!-- 搜索区域 -->
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
         <el-form :model="searchForm" inline>
@@ -31,8 +31,8 @@
       </div>
 
       <!-- 数据表格 -->
-      <div style="padding: 20px;">
-        <el-table :data="tasks" style="width: 100%" v-loading="loading">
+      <div style="padding: 20px; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <el-table :data="tasks" style="width: 100%" height="100%" v-loading="loading">
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="task_name" label="任务名称" width="180" />
           <el-table-column prop="task_func" label="任务函数" width="200" />

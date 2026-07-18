@@ -1,6 +1,6 @@
 <template>
   <div style="height: 100%; display: flex; flex-direction: column;">
-    <el-card style="flex: 1; margin: 20px; box-shadow: none; border: none;" :body-style="{ padding: '0' }">
+    <el-card style="flex: 1; margin: 20px; box-shadow: none; border: none; overflow: hidden;" :body-style="{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
         <el-form :model="searchForm" inline>
           <el-form-item label="日志级别">
@@ -52,8 +52,8 @@
         <span style="color: #666; font-size: 14px; margin-left: auto;">共 {{ total }} 条记录</span>
       </div>
 
-      <div style="padding: 20px;">
-        <el-table :data="tableData" style="width: 100%" v-loading="loading">
+      <div style="padding: 20px; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <el-table :data="tableData" style="width: 100%" height="100%" v-loading="loading">
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="level" label="级别" width="100">
             <template #default="{ row }">
@@ -93,7 +93,7 @@
           </el-table-column>
         </el-table>
 
-        <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+        <div style="margin-top: 20px; display: flex; justify-content: flex-start;">
           <el-pagination
             :current-page="pagination.page"
             :page-size="pagination.page_size"

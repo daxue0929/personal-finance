@@ -1,6 +1,6 @@
 <template>
   <div style="height: 100%; display: flex; flex-direction: column;">
-    <el-card style="flex: 1; margin: 20px; box-shadow: none; border: none;" :body-style="{ padding: '0' }">
+    <el-card style="flex: 1; margin: 20px; box-shadow: none; border: none; overflow: hidden;" :body-style="{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <!-- 搜索区域 -->
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
         <el-form :model="searchForm" inline>
@@ -33,8 +33,8 @@
       </div>
 
       <!-- 数据表格 -->
-      <div style="padding: 20px;">
-        <el-table :data="users" style="width: 100%" v-loading="loading">
+      <div style="padding: 20px; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <el-table :data="users" style="width: 100%" height="100%" v-loading="loading">
           <el-table-column prop="id" label="ID" width="70" />
           <el-table-column prop="username" label="用户名" width="150" />
           <el-table-column prop="display_name" label="姓名" width="120">
