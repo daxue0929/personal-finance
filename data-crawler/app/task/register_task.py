@@ -21,6 +21,7 @@ def register_all_tasks(scheduler):
     from .calculate_buyer_shares_task import calculate_buyer_shares_task
     from .calculate_seller_amount_task import calculate_seller_amount_task
     from .backup_position_snapshot_task import backup_position_snapshot_task
+    from .fetch_fund_detail_task import fetch_fund_detail_task
 
     logger.info("开始注册任务...")
 
@@ -44,5 +45,8 @@ def register_all_tasks(scheduler):
 
     scheduler.register_task('backup_position_snapshot_task', backup_position_snapshot_task)
     logger.info("任务 [持仓每日快照备份任务] 已注册")
+
+    scheduler.register_task('fetch_fund_detail_task', fetch_fund_detail_task)
+    logger.info("任务 [基金详情网页抓取任务] 已注册")
 
     logger.info("所有任务注册完成")
