@@ -167,23 +167,45 @@ chrome 131 的 `/json/version` 端点有 DNS rebinding 防护，拒绝 Host 头�
 
 ## 更新部署
 
-代码更新后：
+`./deploy.sh` 的行为:重建 web/scheduler 容器(应用镜像变了),**不重启 browser**(镜像/配置不变,保持运行不中断抓取)。
+
+### 常规更新(改了后端代码 / 前端 dist)
 
 ```bash
 cd data-crawler
 git pull
-
-# 若改了 Dockerfile.browser / browser-entrypoint.sh，重建 browser 镜像
-docker build -f Dockerfile.browser -t fund-browser:latest .
-
-# 若改了后端依赖(requirements.txt)或 Dockerfile，重建应用镜像并重启
 ./deploy.sh
-
-# 仅改代码(不动依赖)时，重启容器即可（镜像 COPY . . 已含新代码需重建）
-docker compose up -d --build
+# web/scheduler 重建生效；browser 保持运行不动
 ```
 
-前端改动需在 `frontend/` 跑 `npm run build` 并提交 `dist/`，服务器 `git pull` 即更新前端。
+前端改动已在本地 `npm run build` 并提交 `dist/`,服务器 `git pull` 即含,`./deploy.sh` 重建 web 容器后生效。
+
+### 何时需要单独重启 browser
+
+browser 容器默认不随 `./deploy.sh` 重启。仅以下情况需单独操作:
+
+```bash
+# 1. 改了 Dockerfile.browser 或 browser-entrypoint.sh：需重建镜像 + 重启容器
+docker build -f Dockerfile.browser -t fund-browser:latest .
+docker compose up -d --force-recreate browser
+
+# 2. browser 容器异常（chrome 崩溃 / CDP 无响应）：重启容器
+docker compose restart browser
+
+# 3. 改了 docker-compose.yml 的 browser 服务配置：重建该容器
+docker compose up -d --force-recreate browser
+```
+
+> 注意:`docker compose restart browser` 会重启 chrome,正在进行的抓取会中断(任务执行记录会因后台线程异常记 FAILED,下次触发恢复)。常规部署不会触发此情况。
+
+### 完全重建所有容器(慎用)
+
+```bash
+docker compose down       # 停止并移除所有容器（含 browser）
+./deploy.sh               # 重新启动（browser 会被 no-recreate 逻辑重新拉起，因已 down）
+```
+
+`docker compose down` 会停 browser,之后 `./deploy.sh` 的 `--no-recreate browser` 检测到容器不存在会重新创建。仅在需要清理网络/卷时用。
 
 ## 常见问题
 
