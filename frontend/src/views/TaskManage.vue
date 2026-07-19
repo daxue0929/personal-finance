@@ -123,7 +123,7 @@
         <span style="color: #666; font-size: 14px;">共 {{ historyTotal }} 条记录</span>
         <el-button size="small" type="danger" @click="cleanHistory">清理历史记录</el-button>
       </div>
-      <el-table :data="historyData" style="width: 100%" v-loading="historyLoading" size="small">
+      <el-table :data="historyData" style="width: 100%" height="400" v-loading="historyLoading" size="small">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
@@ -144,10 +144,10 @@
         </el-table-column>
         <el-table-column prop="start_time" label="开始时间" width="170" />
         <el-table-column prop="end_time" label="结束时间" width="170" />
-        <el-table-column prop="trace_id" label="TraceID" width="160">
+        <el-table-column prop="trace_id" label="TraceID" width="220">
           <template #default="{ row }">
             <span v-if="row.trace_id" class="trace-id-copy" @click="copyTraceId(row.trace_id)" title="点击复制">
-              {{ row.trace_id.substring(0, 12) }}...
+              {{ row.trace_id.substring(0, 24) }}...
             </span>
             <span v-else>-</span>
           </template>
@@ -155,7 +155,7 @@
         <el-table-column prop="triggered_by" label="触发者" width="90" />
         <el-table-column prop="error_message" label="错误" min-width="150" show-overflow-tooltip />
       </el-table>
-      <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+      <div style="margin-top: 12px; display: flex; justify-content: flex-start;">
         <el-pagination
           v-model:current-page="historyPage"
           v-model:page-size="historyPageSize"
@@ -377,6 +377,7 @@ const showHistoryDialog = (row) => {
   historyTaskFunc.value = row.task_func
   historyTaskName.value = row.task_name
   historyPage.value = 1
+  historyPageSize.value = 20  // 每次打开默认一页 20 条
   historyVisible.value = true
   fetchHistory()
 }
