@@ -363,7 +363,9 @@ const runTask = async (row) => {
       ElMessage.warning(res.message || '任务正在运行，请等待完成')
     } else {
       ElMessage.success('任务已触发')
-      fetchTasks()  // 立即刷新一次，显示运行中
+      // 乐观更新：立即把该任务标记为运行中（局部更新，不触发全量刷新避免闪烁）
+      const t = tasks.value.find(x => x.task_func === row.task_func)
+      if (t) t.running = true
     }
   } catch (error) {
     ElMessage.error('执行失败')
@@ -437,10 +439,33 @@ const cleanHistory = async () => {
   }
 }
 
+// 轻量轮询：只查运行中 task_func 集合，局部更新对应任务的 running 字段（不替换 tasks 数组，避免表格闪烁）
+const pollRunning = async () => {
+  try {
+    const res = await taskApi.getRunningTasks()
+    const runningSet = new Set(res.running || [])
+    // 仅更新 running 状态发生变化的任务，避免无变化时触发重渲染
+    let changed = false
+    for (const t of tasks.value) {
+      const isRunning = runningSet.has(t.task_func)
+      if (t.running !== isRunning) {
+        t.running = isRunning
+        changed = true
+      }
+    }
+    // 若本地有运行中任务但已不在新集合里（完成），也刷新一次执行记录弹窗（若开着）
+    if (changed && historyVisible.value) {
+      fetchHistory()
+    }
+  } catch (e) {
+    // 轮询失败静默（不影响主流程）
+  }
+}
+
 onMounted(() => {
   fetchTasks()
-  // 5s 轮询刷新任务列表（含运行状态），页面卸载时清除
-  pollTimer = setInterval(fetchTasks, 5000)
+  // 5s 轻量轮询运行状态（仅查运行中集合 + 局部更新，不拉全量列表）
+  pollTimer = setInterval(pollRunning, 5000)
 })
 
 onBeforeUnmount(() => {

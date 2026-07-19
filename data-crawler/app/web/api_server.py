@@ -553,6 +553,18 @@ def delete_task(task_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/tasks/running', methods=['GET'])
+@log_request
+def get_running_tasks():
+    """轻量接口：返回当前 RUNNING 的 task_func 集合，供前端轮询运行状态（不拉全量任务列表）"""
+    try:
+        running_funcs = _run_record_storage.get_running_task_funcs()
+        return jsonify({'running': running_funcs}), 200
+    except Exception as e:
+        logger.error(f"获取运行中任务失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/task-records', methods=['GET'])
 @log_request
 def get_task_records():

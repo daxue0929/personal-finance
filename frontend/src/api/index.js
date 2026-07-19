@@ -99,6 +99,9 @@ export const taskApi = {
   runTask: (taskFunc, forceRun = false) =>
     api.post(`/task/run/${taskFunc}`, { force_run: forceRun }),
 
+  // 查询当前运行中的 task_func 集合（轻量轮询接口，不拉全量列表）
+  getRunningTasks: () => api.get('/tasks/running'),
+
   // 查询任务执行记录列表（执行计划弹窗，分页+task_func/status 过滤）
   getRunHistory: (params) => api.get('/task-records', { params }),
 
