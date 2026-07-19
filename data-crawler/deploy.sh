@@ -70,7 +70,13 @@ echo "[2/3] 构建应用镜像 (版本: ${FULL_VERSION})..."
 docker build -t fund-crawler:${FULL_VERSION} -t fund-crawler:latest .
 
 echo "[3/3] 启动服务..."
-docker-compose up -d --force-recreate --remove-orphans
+# browser 镜像/配置通常不变，优先启动且不重建（已运行则不动；首次部署或未运行则启动）
+# --no-deps：不连带启动依赖；--no-recreate：已存在容器不重建
+docker-compose up -d --no-deps --no-recreate browser
+# 只重建应用容器（web/scheduler，镜像已重新 build），不重启 browser
+docker-compose up -d --no-deps --force-recreate web scheduler
+# 清理无关孤儿容器
+docker-compose up -d --remove-orphans >/dev/null 2>&1 || true
 
 echo ""
 echo "=========================================="
@@ -83,14 +89,16 @@ docker-compose ps
 echo ""
 echo "API 地址: http://$(hostname -I | awk '{print $1}'):5000"
 echo ""
-echo "两个容器："
+echo "三个容器："
 echo "  fund-crawler-web        对外提供 Web API (端口 5000)"
 echo "  fund-crawler-scheduler  调度器 + 爬虫任务 (内部端口 5001，不对外)"
+echo "  fund-crawler-browser    Playwright 浏览器服务 (CDP 9222，仅首次部署构建镜像)"
 echo ""
 echo "常用命令:"
 echo "  查看日志: docker-compose logs -f"
 echo "  查看web日志:    docker-compose logs -f web"
 echo "  查看调度器日志: docker-compose logs -f scheduler"
+echo "  查看浏览器日志: docker-compose logs -f browser"
 echo "  重启服务: docker-compose restart"
 echo "  停止服务: docker-compose down"
 echo "  查看镜像: docker images fund-crawler"
