@@ -92,6 +92,7 @@
           <el-table-column prop="amount" label="成交额(亿)" width="110" align="right">
             <template #default="{ row }">{{ row.amount ? row.amount.toFixed(2) : '-' }}</template>
           </el-table-column>
+          <el-table-column prop="source" label="数据来源" width="110" />
         </el-table>
 
         <!-- 分页 -->

@@ -38,6 +38,7 @@ class IndexInfo(Base):
     pe_ratio = Column(DECIMAL(8, 2), default=0.00)
     pe_percentile = Column(DECIMAL(5, 2), default=0.00)
     pb_ratio = Column(DECIMAL(8, 2), default=0.00)
+    source = Column(String(32), default='腾讯财经')
     del_flag = Column(CHAR(1), default='1')
     create_by = Column(String(64))
     create_time = Column(DateTime)
@@ -185,6 +186,7 @@ class IndexInfoStorage(StorageBase):
             'pe_ratio': float(row.pe_ratio) if row.pe_ratio is not None else 0.0,
             'pe_percentile': float(row.pe_percentile) if row.pe_percentile is not None else 0.0,
             'pb_ratio': float(row.pb_ratio) if row.pb_ratio is not None else 0.0,
+            'source': row.source or '',
         }
 
     def create_or_update_index_info(self, index_data: Dict[str, Any]) -> bool:
@@ -214,6 +216,8 @@ class IndexInfoStorage(StorageBase):
                 existing.pe_ratio = index_data.get('pe_ratio', existing.pe_ratio)
                 existing.pe_percentile = index_data.get('pe_percentile', existing.pe_percentile)
                 existing.pb_ratio = index_data.get('pb_ratio', existing.pb_ratio)
+                if index_data.get('source'):
+                    existing.source = index_data.get('source')
                 existing.update_time = get_beijing_now()
                 existing.update_by = 'crawler'
                 logger.info(f"指数 {index_code} 在 {trade_date} 的数据已更新")
@@ -234,6 +238,7 @@ class IndexInfoStorage(StorageBase):
                     pe_ratio=index_data.get('pe_ratio', 0.00),
                     pe_percentile=index_data.get('pe_percentile', 0.00),
                     pb_ratio=index_data.get('pb_ratio', 0.00),
+                    source=index_data.get('source', '腾讯财经'),
                     create_by='crawler',
                     create_time=get_beijing_now()
                 )

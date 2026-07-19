@@ -26,6 +26,7 @@ CREATE TABLE `index_info` (
   `pe_ratio` decimal(8,2) NULL DEFAULT '0.00' COMMENT '市盈率TTM（滚动市盈率）',
   `pe_percentile` decimal(5,2) NULL DEFAULT '0.00' COMMENT 'PE分位（%，历史分位）',
   `pb_ratio` decimal(8,2) NULL DEFAULT '0.00' COMMENT '市净率',
+  `source` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '腾讯财经' COMMENT '数据来源（抓取的网站/接口，如腾讯财经）',
   `del_flag` char(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '1' COMMENT '删除标志（1正常 0删除）',
   `create_by` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '创建者',
   `create_time` datetime NULL DEFAULT NULL COMMENT '创建时间',

@@ -76,7 +76,8 @@ def fetch_kc50_index_task(force_run: bool = False):
             'amount': index_data.amount,
             'pe_ratio': index_data.pe_ratio,
             'pe_percentile': 0.0,
-            'pb_ratio': index_data.pb_ratio
+            'pb_ratio': index_data.pb_ratio,
+            'source': '腾讯财经'
         }
 
         success = storage.create_or_update_index_info(index_info_data)
