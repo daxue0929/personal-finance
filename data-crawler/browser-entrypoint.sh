@@ -1,6 +1,7 @@
 #!/bin/sh
 # browser 服务启动脚本
-# 1. 启动 chrome headless 监听 127.0.0.1:9223（CDP 端口，chrome 只绑 loopback）
+# 1. 启动 chrome 有头模式（xvfb-run 虚拟显示）监听 127.0.0.1:9223（CDP 端口）
+#    有头模式规避东方财富等网站的 headless 检测（headless 下主行情区数字不渲染）
 # 2. node HTTP 反向代理把 0.0.0.0:9222 转发到 127.0.0.1:9223：
 #    - 改写 Host 头为 127.0.0.1:9223（chrome 131 对 /json/version 有 Host 头检查，
 #      拒绝非 localhost 的 Host，如容器间的 browser:9222）
@@ -13,11 +14,15 @@ set -e
 
 CHROME_BIN=$(ls /ms-playwright/chromium-*/chrome-linux/chrome)
 
-# 1. 启动 chrome（后台，CDP 监听 127.0.0.1:9223）
-"$CHROME_BIN" \
-  --headless=new \
+# 1. 启动 chrome（有头模式 + xvfb 虚拟显示，后台，CDP 监听 127.0.0.1:9223）
+# --disable-blink-features=AutomationControlled：去掉 navigator.webdriver 标记，
+# 规避东方财富等网站的 Playwright/自动化检测（检测到则不渲染行情数据）
+xvfb-run -a --server-args="-screen 0 1280x1024x24" "$CHROME_BIN" \
   --no-sandbox \
   --disable-gpu \
+  --disable-blink-features=AutomationControlled \
+  --window-size=1280,1024 \
+  --user-data-dir=/tmp/chrome-profile \
   --remote-debugging-port=9223 \
   --remote-debugging-address=127.0.0.1 &
 

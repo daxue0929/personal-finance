@@ -9,7 +9,14 @@
 # 127.0.0.1:9223，并改写 Host 头与 webSocketDebuggerUrl。两种部署形态都能访问：
 #   - 本地开发：scheduler 在宿主机跑，PLAYWRIGHT_CDP_URL=http://127.0.0.1:9222（经 ports 映射）
 #   - 生产：scheduler 在另一容器，PLAYWRIGHT_CDP_URL=http://browser:9222（同 network）
+#
+# xvfb：chrome 以有头模式跑在虚拟显示里（xvfb-run），规避东方财富等网站的 headless 检测
+# （headless 下主行情区数字不渲染）。服务器无显示器，xvfb 提供虚拟显示。
 FROM mcr.microsoft.com/playwright:v1.49.1-noble
+
+# 装 xvfb（虚拟显示），chrome 有头模式渲染需要
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends xvfb \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY browser-entrypoint.sh /browser-entrypoint.sh
 RUN chmod +x /browser-entrypoint.sh
