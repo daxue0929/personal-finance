@@ -153,3 +153,43 @@ def calc_portfolio_overview(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         'value_change': round(_f(latest.get('current_value')) - _f(first.get('current_value')), 2),
         'profit_loss_change': round(_f(latest.get('profit_loss')) - _f(first.get('profit_loss')), 2),
     }
+
+
+def compute_cost_index_series(snapshots: List[Dict[str, Any]],
+                              index_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """持仓成本价↔指数点位对应序列（规则 B：逐日比例）。
+
+    每日 ratio(t) = 当日指数收盘 / 当日快照基金净值(current_price)，
+    cost_in_index(t) = cost_price(t) × ratio(t)。
+    某日无指数收盘 -> 该点 index_close=None、cost_in_index=None。
+
+    :param snapshots: 单持仓快照序列（升序），每项含 snapshot_date / cost_price / current_price
+    :param index_history: 指数日线序列（升序），每项含 trade_date / close_price；可为空
+    :return: {has_index, points:[{date, cost_price, index_close, cost_in_index}]}
+             无快照 -> points 空、has_index False；无指数 -> has_index False、各点 cost_in_index None
+    """
+    if not snapshots:
+        return {'has_index': False, 'points': []}
+
+    index_by_date = {str(row.get('trade_date')): _f(row.get('close_price'))
+                     for row in (index_history or [])}
+    has_index = bool(index_history)
+
+    points = []
+    for s in snapshots:
+        date = str(s.get('snapshot_date'))
+        cost_price = _f(s.get('cost_price'))
+        fund_nav = _f(s.get('current_price'))
+        index_close = index_by_date.get(date)
+        if fund_nav > 0 and index_close is not None and index_close > 0:
+            cost_in_index = round(cost_price * index_close / fund_nav, 2)
+        else:
+            cost_in_index = None
+        points.append({
+            'date': date,
+            'cost_price': round(cost_price, 4),
+            'index_close': round(index_close, 2) if index_close is not None else None,
+            'cost_in_index': cost_in_index,
+        })
+
+    return {'has_index': has_index, 'points': points}

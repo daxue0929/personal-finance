@@ -71,6 +71,13 @@
         <div v-if="profitSeries.length" ref="profitChartRef" style="height: 320px;"></div>
         <el-empty v-else description="暂无快照数据" />
       </el-card>
+
+      <!-- 成本价与指数对应走势（仅单持仓；双轴：成本价·基金净值 + 实际指数·点位 + 成本对应指数点） -->
+      <el-card v-if="positionId !== 'all'" style="margin-bottom: 16px; box-shadow: none;" :body-style="{ padding: '16px 20px' }">
+        <template #header><span style="font-weight: 500;">成本价与指数对应走势{{ costIndex && costIndex.index_name ? `（${costIndex.index_name}）` : '' }}</span></template>
+        <div v-if="costIndex && costIndex.points && costIndex.points.length" ref="costChartRef" style="height: 320px;"></div>
+        <el-empty v-else description="暂无快照数据" />
+      </el-card>
     </div>
   </div>
 </template>
@@ -93,6 +100,7 @@ const overview = ref({ count: 0 })
 const series = ref([])
 const pie = ref([])
 const profitSeries = ref([])
+const costIndex = ref(null)
 const realizedProfitTotal = ref(0)
 const loading = ref(false)
 
@@ -114,6 +122,7 @@ const { chartRef: rateChartRef, setOption: setRate } = useEChart()
 const { chartRef: valueChartRef, setOption: setValue } = useEChart()
 const { chartRef: pieChartRef, setOption: setPie } = useEChart()
 const { chartRef: profitChartRef, setOption: setProfit } = useEChart()
+const { chartRef: costChartRef, setOption: setCost } = useEChart()
 
 const fmtDate = (d) => {
   const y = d.getFullYear()
@@ -212,6 +221,7 @@ const fetchAnalysis = async () => {
     renderValue()
     renderPie()
     renderProfit()
+    if (positionId.value !== 'all') fetchCostIndex()
   } catch (e) {
     console.error('[PositionAnalysis] fetchAnalysis 失败:', e)
     ElMessage.error('获取分析数据失败')
@@ -375,6 +385,69 @@ const renderProfit = () => {
     yAxis: { type: 'value', name: '盈亏(元)', axisLabel: { formatter: '{value}' } },
     series: [...segSeries, mainSeries]
   })
+}
+
+// 成本价↔指数对应走势（双轴，仅单持仓）：成本价(左轴步进) + 实际指数(右轴) + 成本对应指数点(右轴虚线步进)
+const renderCost = () => {
+  const c = costIndex.value
+  if (!c || !c.points || !c.points.length) { setCost({}); return }
+  const pts = c.points
+  const dates = pts.map(p => p.date)
+  const hasIndex = c.has_index === true
+  const series = [{
+    name: '成本价', type: 'line', step: 'end', yAxisIndex: 0, symbol: 'none',
+    data: pts.map(p => p.cost_price),
+    itemStyle: { color: '#5470C6' }, lineStyle: { color: '#5470C6', width: 2 }
+  }]
+  if (hasIndex) {
+    series.push({
+      name: '实际指数', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none', connectNulls: true,
+      data: pts.map(p => p.index_close),
+      itemStyle: { color: '#FAC858' }, lineStyle: { color: '#FAC858' }
+    })
+    series.push({
+      name: '成本对应指数点', type: 'line', step: 'end', yAxisIndex: 1, symbol: 'none',
+      data: pts.map(p => p.cost_in_index),
+      itemStyle: { color: '#EE6666' }, lineStyle: { color: '#EE6666', width: 2, type: 'dashed' }
+    })
+  }
+  const yAxis = [{ type: 'value', name: '基金净值', position: 'left', scale: true }]
+  if (hasIndex) yAxis.push({ type: 'value', name: '指数点位', position: 'right', scale: true })
+  setCost({
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        let s = params[0].axisValue + '<br/>'
+        params.forEach(p => {
+          const v = p.value
+          const digits = p.seriesName === '成本价' ? 4 : 2
+          s += `${p.marker}${p.seriesName}：${v == null ? '-' : Number(v).toFixed(digits)}<br/>`
+        })
+        return s
+      }
+    },
+    legend: { data: hasIndex ? ['成本价', '实际指数', '成本对应指数点'] : ['成本价'] },
+    grid: { left: 60, right: hasIndex ? 60 : 30, top: 40, bottom: 40 },
+    xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+    yAxis,
+    series
+  })
+}
+
+const fetchCostIndex = async () => {
+  if (positionId.value === 'all') { costIndex.value = null; return }
+  const params = { position_id: positionId.value }
+  if (startDate.value) params.start_date = startDate.value
+  if (endDate.value) params.end_date = endDate.value
+  try {
+    const res = await positionAnalysisApi.getCostIndex(params)
+    costIndex.value = res
+    await nextTick()
+    renderCost()
+  } catch (e) {
+    costIndex.value = null
+    ElMessage.error('获取成本指数数据失败')
+  }
 }
 
 // 持仓占比饼图

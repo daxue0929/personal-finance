@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
 from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage
-from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview
+from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
 
@@ -2429,6 +2429,52 @@ def get_position_snapshot_analysis():
         }), 200
     except Exception as e:
         logger.error(f"持仓分析失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/snapshot/cost-index', methods=['GET'])
+@log_request
+def get_position_snapshot_cost_index():
+    """持仓成本价↔指数对应走势（规则 A：固定比例·最新日）
+
+    参数：position_id（单持仓）、start_date/end_date（可选）
+    返回：{index_code, index_name, ratio, latest_fund_nav, latest_index_close, points}
+    无关联指数时 index_code=None、ratio=None、points 仅含 cost_price。
+    """
+    position_id_raw = request.args.get('position_id', '')
+    try:
+        position_id = int(position_id_raw)
+    except ValueError:
+        return jsonify({'error': 'position_id 必须为整数'}), 400
+
+    try:
+        start_date = request.args.get('start_date', '') or None
+        end_date = request.args.get('end_date', '') or None
+
+        pos = _position_storage.get_position_by_id(position_id)
+        if not pos:
+            return jsonify({'error': '持仓不存在'}), 404
+
+        index_code = pos.get('index_code')
+        snapshots = _position_snapshot_storage.get_position_snapshot_series(
+            position_id=position_id, start_date=start_date, end_date=end_date
+        )
+
+        index_history = []
+        index_name = None
+        if index_code:
+            index_history = _index_storage.get_index_history(index_code, start_date, end_date)
+            index_name = index_history[0].get('index_name') if index_history else None
+
+        result = compute_cost_index_series(snapshots, index_history)
+        return jsonify({
+            'index_code': index_code,
+            'index_name': index_name,
+            'has_index': result['has_index'],
+            'points': result['points'],
+        }), 200
+    except Exception as e:
+        logger.error(f"持仓成本指数对应失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

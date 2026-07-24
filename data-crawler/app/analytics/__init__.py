@@ -16,6 +16,7 @@ from .position_analysis import (
     calc_position_allocation,
     calc_portfolio_profit_series,
     calc_portfolio_overview,
+    compute_cost_index_series,
 )
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     'calc_position_allocation',
     'calc_portfolio_profit_series',
     'calc_portfolio_overview',
+    'compute_cost_index_series',
 ]
