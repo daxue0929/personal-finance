@@ -33,6 +33,7 @@ class Position(Base):
     profit_loss = Column(DECIMAL(15, 2), default=0.00)
     profit_loss_rate = Column(DECIMAL(6, 2), default=0.00)
     buy_date = Column(Date)
+    index_code = Column(String(10))
     del_flag = Column(CHAR(1), default='1')
     create_by = Column(String(64))
     create_time = Column(DateTime)
@@ -92,6 +93,7 @@ class PositionStorage(StorageBase):
                     'profit_loss': float(position.profit_loss) if position.profit_loss else 0.0,
                     'profit_loss_rate': float(position.profit_loss_rate) if position.profit_loss_rate else 0.0,
                     'buy_date': str(position.buy_date) if position.buy_date else None,
+                    'index_code': position.index_code,
                     'remark': position.remark,
                     'create_time': str(position.create_time) if position.create_time else None,
                     'update_time': str(position.update_time) if position.update_time else None
@@ -123,6 +125,7 @@ class PositionStorage(StorageBase):
                     'profit_loss': float(position.profit_loss) if position.profit_loss else 0.0,
                     'profit_loss_rate': float(position.profit_loss_rate) if position.profit_loss_rate else 0.0,
                     'buy_date': str(position.buy_date) if position.buy_date else None,
+                    'index_code': position.index_code,
                     'remark': position.remark,
                     'create_time': str(position.create_time) if position.create_time else None,
                     'update_time': str(position.update_time) if position.update_time else None
@@ -156,6 +159,7 @@ class PositionStorage(StorageBase):
                 profit_loss=profit_loss,
                 profit_loss_rate=profit_loss_rate,
                 buy_date=datetime.strptime(data.get('buy_date'), '%Y-%m-%d').date() if data.get('buy_date') else None,
+                index_code=data.get('index_code'),
                 del_flag='1',
                 create_by=data.get('create_by', 'system'),
                 create_time=get_beijing_now(),
@@ -265,6 +269,7 @@ class PositionStorage(StorageBase):
                     'profit_loss': float(position.profit_loss) if position.profit_loss else 0.0,
                     'profit_loss_rate': float(position.profit_loss_rate) if position.profit_loss_rate else 0.0,
                     'buy_date': str(position.buy_date) if position.buy_date else None,
+                    'index_code': position.index_code,
                     'remark': position.remark
                 }
             return None

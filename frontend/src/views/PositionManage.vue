@@ -53,6 +53,9 @@
             </template>
           </el-table-column>
           <el-table-column prop="buy_date" label="买入日期" width="120" />
+          <el-table-column label="关联指数" width="120">
+            <template #default="{ row }">{{ indexName(row.index_code) }}</template>
+          </el-table-column>
           <el-table-column label="操作" width="140" fixed="right">
             <template #default="{ row }">
               <el-button size="small" @click="showEditDialog(row)">编辑</el-button>
@@ -97,6 +100,16 @@
         <el-form-item label="买入日期" required>
           <el-date-picker v-model="form.buy_date" type="date" value-format="YYYY-MM-DD" style="width: 100%;" />
         </el-form-item>
+        <el-form-item label="关联指数">
+          <el-select v-model="form.index_code" placeholder="请选择指数" clearable filterable style="width: 100%;">
+            <el-option
+              v-for="o in indexOptions"
+              :key="o.index_code"
+              :label="`${o.index_code} - ${o.index_name}`"
+              :value="o.index_code"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -110,7 +123,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { portfolioApi } from '@/api'
+import { portfolioApi, indexApi } from '@/api'
 import FundSelect from '@/components/FundSelect.vue'
 
 const list = ref([])
@@ -119,13 +132,19 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const searchForm = ref({ fund_code: '', fund_name: '' })
+const indexOptions = ref([])
 
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
-const form = ref({ fund_code: '', fund_name: '', shares: 0, cost_price: 0, current_price: 0, buy_date: '' })
+const form = ref({ fund_code: '', fund_name: '', shares: 0, cost_price: 0, current_price: 0, buy_date: '', index_code: '' })
 
 const fmt = (v, digits = 2) => (v != null ? Number(v).toFixed(digits) : '-')
+const indexName = (code) => {
+  if (!code) return '-'
+  const o = indexOptions.value.find(i => i.index_code === code)
+  return o ? o.index_name : code
+}
 // 本地日期（避免 toISOString 在北京时间凌晨取到昨天）
 const todayStr = () => {
   const d = new Date()
@@ -162,7 +181,7 @@ const handleCurrentChange = () => { fetchList() }
 const showAddDialog = () => {
   isEdit.value = false
   editId.value = null
-  form.value = { fund_code: '', fund_name: '', shares: 0, cost_price: 0, current_price: 0, buy_date: todayStr() }
+  form.value = { fund_code: '', fund_name: '', shares: 0, cost_price: 0, current_price: 0, buy_date: todayStr(), index_code: '' }
   dialogVisible.value = true
 }
 
@@ -175,7 +194,8 @@ const showEditDialog = (row) => {
     shares: row.shares,
     cost_price: row.cost_price,
     current_price: row.current_price,
-    buy_date: row.buy_date
+    buy_date: row.buy_date,
+    index_code: row.index_code || ''
   }
   dialogVisible.value = true
 }
@@ -223,8 +243,18 @@ const onFundSelect = (fund) => {
   form.value.current_price = fund.net_asset_value || 0
 }
 
+const fetchIndexOptions = async () => {
+  try {
+    const res = await indexApi.getOptions()
+    indexOptions.value = res.data || []
+  } catch (e) {
+    ElMessage.error('获取指数选项失败')
+  }
+}
+
 onMounted(() => {
   fetchList()
+  fetchIndexOptions()
 })
 </script>
 
