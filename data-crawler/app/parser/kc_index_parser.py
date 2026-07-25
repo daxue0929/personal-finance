@@ -26,6 +26,7 @@ class KcIndexData:
     pe_ratio: float
     pb_ratio: float
     update_time: str
+    trade_date: Optional[str] = None  # 交易日（腾讯响应 parts[30] 前 8 位，YYYY-MM-DD）
 
 
 class KcIndexParser:
@@ -82,7 +83,11 @@ class KcIndexParser:
             
             if len(parts) >= 50:
                 from ..utils.datetime_utils import get_beijing_now_str
-                
+
+                # 交易日：parts[30] 形如 "20260724161408"，取前 8 位 -> YYYY-MM-DD
+                raw = parts[30] if len(parts) > 30 else ''
+                trade_date = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}" if len(raw) >= 8 else None
+
                 return KcIndexData(
                     index_code=self.index_code,
                     index_name=self.index_name,
@@ -96,7 +101,8 @@ class KcIndexParser:
                     turnover_rate=float(parts[38]) if (len(parts) > 38 and parts[38]) else 0.0,
                     pe_ratio=float(parts[39]) if (len(parts) > 39 and parts[39]) else 0.0,
                     pb_ratio=float(parts[46]) if (len(parts) > 46 and parts[46]) else 0.0,
-                    update_time=get_beijing_now_str('%Y-%m-%d %H:%M:%S')
+                    update_time=get_beijing_now_str('%Y-%m-%d %H:%M:%S'),
+                    trade_date=trade_date
                 )
         except (ValueError, IndexError):
             pass

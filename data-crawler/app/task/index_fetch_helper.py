@@ -51,11 +51,12 @@ def fetch_and_store_index(index_code: str, force_run: bool = False) -> Optional[
                     f"PE={index_data.pe_ratio} PB={index_data.pb_ratio}")
 
         today = get_beijing_now().date()
+        trade_date = index_data.trade_date or today.isoformat()
         index_info_data = {
             'index_code': index_data.index_code,
             'index_name': index_data.index_name,
             'index_type': '宽基指数',
-            'trade_date': today.isoformat(),
+            'trade_date': trade_date,
             'open_price': index_data.open_price,
             'close_price': index_data.close_price,
             'high_price': index_data.high_price,
@@ -70,7 +71,7 @@ def fetch_and_store_index(index_code: str, force_run: bool = False) -> Optional[
         }
 
         if storage.create_or_update_index_info(index_info_data):
-            logger.info(f"  成功更新 index_info 表 (日期: {today})")
+            logger.info(f"  成功更新 index_info 表 (日期: {trade_date})")
         else:
             logger.warning("  更新 index_info 表失败")
         return index_data

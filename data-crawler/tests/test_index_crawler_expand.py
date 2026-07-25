@@ -51,6 +51,40 @@ def test_parser_unsupported_code_raises():
         KcIndexParser('999999')
 
 
+# ==================== Parser: _parse 提取交易日 ====================
+
+def _make_tencent_content(parts):
+    """构造腾讯响应字符串"""
+    return 'v_sh000300="' + '~'.join(parts) + '";'
+
+
+def test_parse_extracts_trade_date():
+    """_parse 从 parts[30] 提取真实交易日（YYYYMMDDHHMMSS -> YYYY-MM-DD）"""
+    parser = KcIndexParser('000300')
+    parts = ['0'] * 50
+    parts[1] = '沪深300'
+    parts[3] = '4649.19'
+    parts[5] = '4685.41'
+    parts[30] = '20260724161408'
+    parts[32] = '-1.67'
+    parts[33] = '4704.08'
+    parts[34] = '4642.94'
+    result = parser._parse(_make_tencent_content(parts))
+    assert result is not None
+    assert result.trade_date == '2026-07-24'
+    assert result.close_price == 4649.19
+
+
+def test_parse_trade_date_none_when_missing():
+    """parts[30] 为空/缺失 -> trade_date None（调用方 fallback today）"""
+    parser = KcIndexParser('000300')
+    parts = ['0'] * 50
+    parts[30] = ''
+    result = parser._parse(_make_tencent_content(parts))
+    assert result is not None
+    assert result.trade_date is None
+
+
 # ==================== Helper: fetch_and_store_index ====================
 
 def _fake_index_data(code='000300', name='沪深300'):
@@ -59,7 +93,8 @@ def _fake_index_data(code='000300', name='沪深300'):
         open_price=4600.0, close_price=4649.19, high_price=4728.0, low_price=4580.0,
         change_percent=-1.67, volume=10000.0, amount=200.0,
         turnover_rate=0.0, pe_ratio=14.37, pb_ratio=0.0,
-        update_time='2026-07-24 15:00:00'
+        update_time='2026-07-24 15:00:00',
+        trade_date='2026-07-24'
     )
 
 
@@ -82,6 +117,7 @@ def test_fetch_and_store_index_success(mock_storage_cls, mock_parser_cls):
     assert data['index_name'] == '沪深300'
     assert data['index_type'] == '宽基指数'
     assert data['source'] == '腾讯财经'
+    assert data['trade_date'] == '2026-07-24'  # 用解析出的交易日，非 today
 
 
 @patch('app.task.index_fetch_helper.is_trading_time', return_value=False)
