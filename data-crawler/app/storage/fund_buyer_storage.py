@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime, date
+from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy import Column, BigInteger, String, Date, DateTime, DECIMAL, CHAR
@@ -17,6 +18,18 @@ from ..utils.db import get_db_session, get_db_engine
 from ..utils.logger import logger
 from ..utils.datetime_utils import get_beijing_now
 from .base import Base, StorageBase
+
+
+def compute_buyer_shares(amt, nav):
+    """纯计算：买入份额 = 金额 / 净值，四舍五入保留 4 位。nav<=0 返回 None。
+
+    供 calculate_buyer_shares_task 与买入补录接口共用，保证份额算法一致。
+    """
+    nav = float(nav)
+    if nav <= 0:
+        return None
+    shares = Decimal(str(amt)) / Decimal(str(nav))
+    return shares.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
 
 
 def _compute_buyer_accumulation(old_shares, old_cost_amount, buy_shares, buy_amt, current_price):

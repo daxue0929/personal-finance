@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/components/Layout.vue'
+import Dashboard from '@/views/Dashboard.vue'
 import TaskManage from '@/views/TaskManage.vue'
 import FundManage from '@/views/FundManage.vue'
 import FundBuyer from '@/views/FundBuyer.vue'
@@ -26,14 +27,14 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/portfolio',
+    redirect: '/dashboard',
     meta: { requiresAuth: true },
     children: [
       {
-        path: '/portfolio',
-        name: 'PortfolioBoard',
-        component: PortfolioBoard,
-        meta: { title: '持仓看板', sort: 10 }
+        path: '/dashboard',
+        name: 'Dashboard',
+        component: Dashboard,
+        meta: { title: '首页', sort: 5 }
       },
       {
         path: '/buyers',
@@ -64,6 +65,12 @@ const routes = [
         name: 'PositionAnalysisRoot',
         meta: { title: '持仓分析', sort: 15, isParent: true },
         children: [
+          {
+            path: '/portfolio',
+            name: 'PortfolioBoard',
+            component: PortfolioBoard,
+            meta: { title: '持仓组合', sort: 15, parentTitle: '持仓分析' }
+          },
           {
             path: '/position-analysis/manage',
             name: 'PositionManage',

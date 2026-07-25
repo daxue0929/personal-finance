@@ -166,7 +166,10 @@ export const buyerApi = {
   deleteBuyer: (id) => api.delete(`/buyers/${id}`),
 
   // 快捷买入
-  quickBuy: (data) => api.post('/buyers/quick-buy', data)
+  quickBuy: (data) => api.post('/buyers/quick-buy', data),
+
+  // 补录买入（一步到位：建记录+算份额+更新持仓）
+  backfill: (data) => api.post('/buyers/backfill', data)
 }
 
 // 基金卖出流水相关API
@@ -250,7 +253,10 @@ export const portfolioApi = {
   createPortfolioPosition: (data) => api.post('/portfolio-positions', data),
 
   // 删除组合持仓关联
-  deletePortfolioPosition: (id) => api.delete(`/portfolio-positions/${id}`)
+  deletePortfolioPosition: (id) => api.delete(`/portfolio-positions/${id}`),
+
+  // 获取实时持仓占比（Dashboard 饼图）
+  getAllocation: () => api.get('/positions/allocation')
 }
 
 // 指数分析相关API

@@ -55,6 +55,8 @@
         </div>
       </el-header>
 
+      <TagsView />
+
       <el-main style="background-color: #f5f5f5; padding: 0;">
         <router-view />
       </el-main>
@@ -66,8 +68,9 @@
 import { computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Setting, Wallet, ShoppingCart, Sell, TrendCharts, Folder, Monitor, User, DataAnalysis, Document, DataLine, PieChart, Coin, Histogram } from '@element-plus/icons-vue'
+import { Setting, Wallet, ShoppingCart, Sell, TrendCharts, Folder, Monitor, User, DataAnalysis, Document, DataLine, PieChart, Coin, Histogram, Odometer } from '@element-plus/icons-vue'
 import { authApi } from '@/api'
+import TagsView from '@/components/TagsView.vue'
 import { auth, isAdmin, clearAuthUser } from '@/stores/auth'
 
 const router = useRouter()
@@ -103,6 +106,7 @@ const currentTitle = computed(() => {
 
 // 图标映射
 const iconMap = {
+  '/dashboard': Odometer,
   '/portfolio': Folder,
   '/buyers': ShoppingCart,
   '/sellers': Sell,

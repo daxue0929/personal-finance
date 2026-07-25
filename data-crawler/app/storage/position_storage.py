@@ -243,6 +243,23 @@ class PositionStorage(StorageBase):
         finally:
             session.close()
 
+    def get_all_active_positions(self):
+        """获取全部有效持仓（del_flag='1'），供 Dashboard 实时持仓占比饼图。
+
+        返回每项含 fund_code/fund_name/current_value 的 dict 列表。
+        current_value 用 position 表冗余字段（份额×当前净值，买入/刷新份额时维护）。
+        """
+        session = self.get_session()
+        try:
+            rows = session.query(Position).filter(Position.del_flag == '1').all()
+            return [{
+                'fund_code': p.fund_code,
+                'fund_name': p.fund_name or '',
+                'current_value': float(p.current_value) if p.current_value else 0.0,
+            } for p in rows]
+        finally:
+            session.close()
+
     def get_position_by_fund_code(self, fund_code: str) -> Optional[Dict]:
         """
         根据基金代码获取持仓记录

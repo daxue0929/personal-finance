@@ -2,6 +2,12 @@
   <div style="padding: 20px;">
     <!-- 顶部控制栏 -->
     <el-card style="margin-bottom: 16px; box-shadow: none;" :body-style="{ padding: '16px 20px' }">
+      <div style="display: flex; align-items: center; margin-bottom: 12px;">
+        <span style="font-weight: 500; font-size: 15px;">持仓分析</span>
+        <el-tooltip content="本页分析基于每日持仓快照（前一交易日数据）" placement="top">
+          <el-icon style="margin-left: 4px; color: #909399; cursor: help; font-size: 16px;"><QuestionFilled /></el-icon>
+        </el-tooltip>
+      </div>
       <el-form :inline="true" style="margin-bottom: 0;">
         <el-form-item label="持仓">
           <el-select v-model="positionId" style="width: 260px;" @change="onParamChange">
@@ -85,6 +91,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import { positionAnalysisApi } from '@/api'
 import { useEChart } from '@/composables/useEChart'
 

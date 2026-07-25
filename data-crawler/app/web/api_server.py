@@ -1172,6 +1172,100 @@ def create_buyer():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/buyers/backfill', methods=['POST'])
+@log_request
+def backfill_buyer():
+    """补录买入：一步到位 - 建记录 + 立即算份额(buy_date 净值) + 立即更新持仓
+
+    返回：SUCCESS/NO_POSITION -> 201 {success, shares, position_updated, message}；
+          净值缺失 -> 400；持仓更新异常 -> 500（买入保持 PENDING，任务重试）。
+    """
+    from ..storage.fund_buyer_storage import FundBuyer, compute_buyer_shares
+    from ..utils.nav_utils import get_nav_value_by_date
+    from sqlalchemy.exc import IntegrityError
+    try:
+        data = request.json
+        for field in ['fund_code', 'time', 'amt']:
+            if field not in data:
+                return jsonify({'error': f'缺少必填字段: {field}'}), 400
+        try:
+            amt = float(data['amt'])
+            if amt <= 0:
+                return jsonify({'error': '买入金额必须大于0'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': '买入金额必须是有效的数字'}), 400
+
+        fund_code = data['fund_code']
+        buy_date = data['time']  # YYYY-MM-DD
+
+        # 1. 取 buy_date 净值（精确日期匹配）
+        nav = get_nav_value_by_date(_fund_storage, _nav_storage, fund_code, buy_date)
+        if nav is None or nav <= 0:
+            return jsonify({'error': f'无法获取 {buy_date} 的净值，请先录入该日净值'}), 400
+
+        # 2. 算份额（用 buy_date 净值）
+        shares = compute_buyer_shares(amt, nav)
+        shares_float = float(shares)
+
+        # 最新净值（用于持仓 current_price + 重算市值）
+        # 补录是过去日期，持仓"现价"应用最新净值，而非买入日净值（否则 current_value 虚高/虚低）
+        fund_info = _fund_storage.get_fund_by_code(fund_code)
+        latest_nav = float(fund_info.net_asset_value) if (fund_info and fund_info.net_asset_value) else nav
+
+        # 3. 建买入记录（PENDING），拿 id
+        session = _buyer_storage.Session()
+        try:
+            new_buyer = FundBuyer(
+                fund_code=fund_code,
+                fund_name=data.get('fund_name', ''),
+                time=dt.strptime(buy_date, '%Y-%m-%d').date(),
+                amt=amt,
+                type=data.get('type', '1'),
+                policy='',
+                buy_status='PENDING',
+                remark=data.get('remark', ''),
+                del_flag='1',
+                create_by='api',
+                create_time=get_beijing_now(),
+                update_by='api',
+                update_time=get_beijing_now(),
+            )
+            session.add(new_buyer)
+            session.commit()
+            session.refresh(new_buyer)
+            buyer_id = new_buyer.id
+        except IntegrityError as e:
+            session.rollback()
+            logger.warning(f"补录撞唯一键: {e}")
+            return jsonify({'error': f'该基金在 {buy_date} 该买入类型已存在记录，无法重复补录（可删除/编辑已有记录）'}), 400
+        except Exception as e:
+            session.rollback()
+            logger.error(f"补录建记录失败: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            session.close()
+
+        # 4. 原子累加持仓 + 标 SUCCESS（current_price 用最新净值，ERROR 则记录留 PENDING，任务重试）
+        result = _buyer_storage.process_buyer_transaction(
+            [buyer_id], fund_code, shares_float, amt, latest_nav, buy_date
+        )
+
+        if result == 'ERROR':
+            return jsonify({'error': '补录失败（持仓更新异常），买入记录保持待处理，将稍后重试'}), 500
+
+        position_updated = (result == 'SUCCESS')
+        message = '补录成功，持仓已更新' if position_updated else '补录成功，但该基金无持仓，未更新持仓（请先建持仓）'
+        return jsonify({
+            'success': True,
+            'shares': shares_float,
+            'position_updated': position_updated,
+            'message': message
+        }), 201
+    except Exception as e:
+        logger.error(f"补录买入失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/buyers/<int:buyer_id>', methods=['PUT'])
 @log_request
 def update_buyer(buyer_id):
@@ -1903,6 +1997,23 @@ def get_position_by_fund():
         return jsonify({'data': position}), 200
     except Exception as e:
         logger.error(f"按基金查询持仓失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/positions/allocation', methods=['GET'])
+@log_request
+def get_positions_allocation():
+    """Dashboard 持仓占比（实时）：全量有效持仓按市值占比
+
+    数据源为实时 position 表（current_value），非历史快照。
+    返回 {data:[{fund_code, fund_name, value, percent}]}，无持仓返回空。
+    """
+    try:
+        positions = _position_storage.get_all_active_positions()
+        allocation = calc_position_allocation(positions)
+        return jsonify({'data': allocation}), 200
+    except Exception as e:
+        logger.error(f"获取持仓占比失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

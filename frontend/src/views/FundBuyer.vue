@@ -41,6 +41,9 @@
           <el-button type="primary" @click="showAddDialog">新增买入记录</el-button>
           <el-button type="success" @click="showQuickBuyDialog">快捷买入</el-button>
           <el-button type="warning" @click="refreshShares" :loading="refreshing">刷新份额</el-button>
+          <el-button type="info" @click="showBackfillDialog">
+            <el-icon><Clock /></el-icon> 补录买入
+          </el-button>
         </div>
         <el-popover
           v-model:visible="popoverVisible"
@@ -203,13 +206,44 @@
         <el-button type="primary" @click="submitQuickBuy">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 补录买入对话框 -->
+    <el-dialog v-model="backfillVisible" title="补录买入记录" width="500px">
+      <el-form :model="backfillForm" label-width="100px">
+        <el-form-item label="选择基金" required>
+          <FundSelect v-model="backfillForm.fund_code" placeholder="请搜索选择基金" @select="onBackfillFundSelect" />
+        </el-form-item>
+        <el-form-item label="基金名称">
+          <el-input v-model="backfillForm.fund_name" disabled />
+        </el-form-item>
+        <el-form-item label="买入日期" required>
+          <el-date-picker v-model="backfillForm.time" type="date" placeholder="选择日期（可补录过去）" value-format="YYYY-MM-DD" style="width: 100%;" />
+        </el-form-item>
+        <el-form-item label="买入金额" required>
+          <el-input v-model="backfillForm.amt" placeholder="请输入买入金额" />
+        </el-form-item>
+        <el-form-item label="买入类型">
+          <el-select v-model="backfillForm.type" style="width: 100%;">
+            <el-option label="手工买入" value="1" />
+            <el-option label="定投买入" value="2" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="backfillForm.remark" type="textarea" placeholder="请输入备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="backfillVisible = false">取消</el-button>
+        <el-button type="primary" :loading="backfilling" @click="submitBackfill">补录</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MoreFilled, Download } from '@element-plus/icons-vue'
+import { MoreFilled, Download, Clock } from '@element-plus/icons-vue'
 import { buyerApi, taskApi } from '@/api'
 import FundSelect from '@/components/FundSelect.vue'
 
@@ -225,6 +259,18 @@ const quickBuyVisible = ref(false)
 const quickBuyForm = ref({
   fund_code: '',
   change_pct: ''
+})
+
+// 补录买入相关
+const backfillVisible = ref(false)
+const backfilling = ref(false)
+const backfillForm = ref({
+  fund_code: '',
+  fund_name: '',
+  time: '',
+  amt: '',
+  type: '1',
+  remark: ''
 })
 
 // 功能面板相关
@@ -445,6 +491,49 @@ const submitQuickBuy = async () => {
     const errorInfo = error.response?.data
     const errorMsg = errorInfo?.error || errorInfo?.message || errorInfo?.success === false ? errorInfo.message : error.message
     ElMessage.error('快捷买入失败: ' + errorMsg)
+  }
+}
+
+// 显示补录对话框
+const showBackfillDialog = () => {
+  backfillForm.value = {
+    fund_code: '',
+    fund_name: '',
+    time: getToday(),
+    amt: '',
+    type: '1',
+    remark: ''
+  }
+  backfillVisible.value = true
+}
+
+// 补录选基金自动填名称
+const onBackfillFundSelect = (fund) => {
+  backfillForm.value.fund_name = fund ? fund.fund_name : ''
+}
+
+// 提交补录（一步到位：建记录+算份额+更新持仓）
+const submitBackfill = async () => {
+  if (!backfillForm.value.fund_code || !backfillForm.value.time || !backfillForm.value.amt || Number(backfillForm.value.amt) <= 0) {
+    ElMessage.warning('请填写必填项（基金、买入日期、买入金额>0）')
+    return
+  }
+  backfilling.value = true
+  try {
+    const res = await buyerApi.backfill(backfillForm.value)
+    const shares = Number(res.shares).toFixed(4)
+    if (res.position_updated) {
+      ElMessage.success(`补录成功，份额 ${shares}，持仓已更新`)
+    } else {
+      ElMessage.warning(`补录成功，份额 ${shares}，但该基金无持仓，未更新（请先建持仓）`)
+    }
+    backfillVisible.value = false
+    fetchBuyers()
+  } catch (error) {
+    const errorInfo = error.response?.data
+    ElMessage.error('补录失败: ' + (errorInfo?.error || error.message))
+  } finally {
+    backfilling.value = false
   }
 }
 

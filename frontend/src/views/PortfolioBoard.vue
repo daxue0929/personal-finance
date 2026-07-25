@@ -3,7 +3,7 @@
     <!-- 头部 -->
     <div class="board-header">
       <div class="header-title">
-        <h2>我的持仓看板</h2>
+        <h2>我的持仓组合</h2>
         <p>管理您的投资组合</p>
       </div>
       <el-button type="primary" @click="showCreatePortfolioDialog">

@@ -5,9 +5,8 @@
 每小时执行一次，查询待处理的买入记录，根据净值计算份额
 """
 
-from decimal import Decimal, ROUND_HALF_UP
-
 from ..storage import FundBuyerStorage, FundInfoStorage, FundNavHistoryStorage
+from ..storage.fund_buyer_storage import compute_buyer_shares
 from ..utils.logger import logger
 from ..utils.nav_utils import get_nav_value_by_date
 
@@ -67,8 +66,7 @@ def calculate_buyer_shares_task(force_run: bool = False):
                     continue
 
                 # 计算份额：金额 / 净值，四舍五入保留4位小数
-                shares = Decimal(str(buy_amt)) / Decimal(str(nav))
-                shares = shares.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+                shares = compute_buyer_shares(buy_amt, nav)
 
                 logger.info(
                     f"买入记录 {buyer_id}: 基金 {fund_code} 在 {buy_time} "
