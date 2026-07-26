@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
 from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage
-from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series
+from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series, filter_trading_days
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
 
@@ -2496,10 +2496,14 @@ def get_position_snapshot_analysis():
         start_date = request.args.get('start_date', '') or None
         end_date = request.args.get('end_date', '') or None
 
+        # 交易日历（fund_nav_history 只在交易日有净值），过滤掉非交易日快照点（周末/节假日的无意义平段）
+        trading_dates = _nav_storage.get_trading_dates(start_date, end_date)
+
         # 组合级累计收益序列（按日期聚合全部持仓）
         portfolio_rows = _position_snapshot_storage.get_portfolio_snapshot_series(
             start_date=start_date, end_date=end_date
         )
+        portfolio_rows = filter_trading_days(portfolio_rows, trading_dates)
         portfolio_series = calc_portfolio_profit_series(portfolio_rows)
 
         # 单持仓 vs 组合视角
@@ -2515,6 +2519,7 @@ def get_position_snapshot_analysis():
             series = _position_snapshot_storage.get_position_snapshot_series(
                 position_id=position_id, start_date=start_date, end_date=end_date
             )
+            series = filter_trading_days(series, trading_dates)
             overview = calc_position_overview(series)
 
         # 饼图：最新快照日的全部持仓占比（与选中持仓无关）

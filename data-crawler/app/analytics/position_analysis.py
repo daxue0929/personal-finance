@@ -18,6 +18,21 @@ def _f(v) -> float:
     return float(v) if v is not None else 0.0
 
 
+def filter_trading_days(rows: List[Dict[str, Any]], trading_dates) -> List[Dict[str, Any]]:
+    """按交易日集合过滤快照序列，剔除非交易日（周末/节假日）点。
+
+    非交易日快照的净值照搬前一交易日，在走势图上是无意义平段。用真实净值日
+    （fund_nav_history distinct nav_date）作交易日历过滤。
+
+    :param rows: 快照行列表，每项含 snapshot_date（str）
+    :param trading_dates: 交易日字符串集合；为空时原样返回（兜底，不误删清空）
+    :return: 仅保留 snapshot_date ∈ trading_dates 的行，顺序不变
+    """
+    if not trading_dates:
+        return rows
+    return [r for r in rows if str(r.get('snapshot_date')) in trading_dates]
+
+
 def calc_max_drawdown(values: List) -> Optional[float]:
     """最大回撤率（百分比数值）。
 

@@ -108,7 +108,28 @@ class FundNavHistoryStorage(StorageBase):
             return None
         finally:
             session.close()
-    
+
+    def get_trading_dates(self, start_date=None, end_date=None):
+        """获取交易日集合（全局 distinct nav_date）。
+
+        fund_nav_history 只在交易日有净值记录，用作交易日历。取所有基金 nav_date 的
+        并集（A股交易日统一），供持仓分析图过滤非交易日点。
+
+        :param start_date: 起始日期（可选）
+        :param end_date: 结束日期（可选）
+        :return: 交易日字符串集合 set[str]（YYYY-MM-DD）
+        """
+        session = self.get_session()
+        try:
+            query = session.query(FundNavHistory.nav_date).distinct()
+            if start_date:
+                query = query.filter(FundNavHistory.nav_date >= start_date)
+            if end_date:
+                query = query.filter(FundNavHistory.nav_date <= end_date)
+            return {str(row[0]) for row in query.all()}
+        finally:
+            session.close()
+
     def add_nav_record(self, fund_code, fund_name, nav_date, unit_nav, 
                       daily_growth_rate=None, source='manual'):
         """

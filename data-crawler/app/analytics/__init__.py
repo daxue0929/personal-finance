@@ -17,6 +17,7 @@ from .position_analysis import (
     calc_portfolio_profit_series,
     calc_portfolio_overview,
     compute_cost_index_series,
+    filter_trading_days,
 )
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     'calc_portfolio_profit_series',
     'calc_portfolio_overview',
     'compute_cost_index_series',
+    'filter_trading_days',
 ]
