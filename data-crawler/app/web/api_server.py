@@ -2575,6 +2575,9 @@ def get_position_snapshot_cost_index():
         snapshots = _position_snapshot_storage.get_position_snapshot_series(
             position_id=position_id, start_date=start_date, end_date=end_date
         )
+        # 过滤非交易日快照点（与持仓分析三图一致，避免周末/节假日平段）
+        trading_dates = _nav_storage.get_trading_dates(start_date, end_date)
+        snapshots = filter_trading_days(snapshots, trading_dates)
 
         index_history = []
         index_name = None
