@@ -148,6 +148,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'UserManage' })
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '@/api'

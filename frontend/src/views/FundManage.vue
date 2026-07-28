@@ -196,6 +196,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'FundManage' })
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

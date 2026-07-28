@@ -241,6 +241,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'FundBuyer' })
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled, Download, Clock } from '@element-plus/icons-vue'

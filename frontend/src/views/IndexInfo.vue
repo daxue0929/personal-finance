@@ -113,6 +113,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'IndexInfo' })
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { indexApi } from '@/api'

@@ -33,6 +33,11 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchAnalysis">查询</el-button>
+          <el-tooltip content="该持仓未关联指数" placement="top" :disabled="!!currentIndexCode">
+            <span style="margin-left: 12px;">
+              <el-button type="success" :disabled="!currentIndexCode" @click="goIndexAnalysis">指数分析</el-button>
+            </span>
+          </el-tooltip>
         </el-form-item>
       </el-form>
     </el-card>
@@ -89,11 +94,15 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'PositionAnalysis' })
 import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { positionAnalysisApi } from '@/api'
 import { useEChart } from '@/composables/useEChart'
+
+const router = useRouter()
 
 // 配色：A股涨红跌绿（与 IndexAnalysis/PortfolioBoard 一致）
 const UP = '#f56c6c'
@@ -103,6 +112,20 @@ const C_VALUE = '#5470C6'
 
 const positionOptions = ref([])
 const positionId = ref(null)
+
+// 当前选中持仓关联的指数代码（全部持仓/无关联指数时为空 -> 「指数分析」按钮置灰）
+const currentIndexCode = computed(() => {
+  if (positionId.value === 'all') return null
+  const opt = positionOptions.value.find(o => o.position_id === positionId.value)
+  return opt ? opt.index_code : null
+})
+
+// 跳转指数分析页，带上关联指数代码
+const goIndexAnalysis = () => {
+  if (!currentIndexCode.value) return
+  router.push({ path: '/index/analysis', query: { index_code: currentIndexCode.value } })
+}
+
 const overview = ref({ count: 0 })
 const series = ref([])
 const pie = ref([])

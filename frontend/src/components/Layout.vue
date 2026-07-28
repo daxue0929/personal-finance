@@ -58,7 +58,11 @@
       <TagsView />
 
       <el-main style="background-color: #f5f5f5; padding: 0;">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <keep-alive :include="cachedNames">
+            <component :is="Component" />
+          </keep-alive>
+        </router-view>
       </el-main>
     </el-container>
   </el-container>
@@ -71,10 +75,14 @@ import { ElMessage } from 'element-plus'
 import { Setting, Wallet, ShoppingCart, Sell, TrendCharts, Folder, Monitor, User, DataAnalysis, Document, DataLine, PieChart, Coin, Histogram, Odometer } from '@element-plus/icons-vue'
 import { authApi } from '@/api'
 import TagsView from '@/components/TagsView.vue'
+import { useTagsView } from '@/composables/useTagsView'
 import { auth, isAdmin, clearAuthUser } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
+
+// keep-alive 缓存名单：随已打开标签动态增减（关闭标签即清缓存）
+const { cachedNames } = useTagsView()
 
 // 是否对当前用户可见（管理员专属项对普通用户隐藏）
 const visible = (r) => !(r.meta?.adminOnly && !isAdmin())

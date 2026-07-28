@@ -171,6 +171,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'TaskManage' })
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskApi } from '@/api'

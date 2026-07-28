@@ -13,6 +13,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'Dashboard' })
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { portfolioApi } from '@/api'

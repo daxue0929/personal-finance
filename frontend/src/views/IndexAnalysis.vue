@@ -137,11 +137,15 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'IndexAnalysis' })
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { TrendCharts, DataLine, Warning, Opportunity, InfoFilled } from '@element-plus/icons-vue'
 import { indexApi } from '@/api'
 import { useEChart } from '@/composables/useEChart'
+
+const route = useRoute()
 
 // 颜色常量（见 tasks/design-index-analysis.md）
 const UP = '#f56c6c'
@@ -485,6 +489,10 @@ const renderDca = () => {
 }
 
 onMounted(async () => {
+  // 从持仓分析跳转带入的指数代码（在 fetchOptions 前设置，若在选项中则保留）
+  if (route.query.index_code) {
+    indexCode.value = String(route.query.index_code)
+  }
   await fetchOptions()
   onQuickChange(12) // 默认近1年
 })

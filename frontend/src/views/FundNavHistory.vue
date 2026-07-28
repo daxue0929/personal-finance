@@ -79,6 +79,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'FundNavHistory' })
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

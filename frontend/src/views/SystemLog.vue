@@ -147,6 +147,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'SystemLog' })
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { logApi } from '@/api'

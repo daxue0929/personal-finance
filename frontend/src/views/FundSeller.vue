@@ -200,6 +200,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'FundSeller' })
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled, Download } from '@element-plus/icons-vue'

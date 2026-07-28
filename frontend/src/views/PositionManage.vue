@@ -120,6 +120,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'PositionManage' })
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'

@@ -1,6 +1,6 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
-const HOME = { path: '/dashboard', title: '首页', affix: true }
+const HOME = { path: '/dashboard', name: 'Dashboard', title: '首页', affix: true }
 
 // 叶子路由：matched 末位记录有 components.default（父菜单 isParent 无组件，不成 tab）
 const isLeafRoute = (route) => {
@@ -9,16 +9,22 @@ const isLeafRoute = (route) => {
   return !!(last && last.components && last.components.default)
 }
 
-export function useTagsView() {
-  const tabs = ref([{ ...HOME }])
-  const activePath = ref(HOME.path)
+// 模块级单例：TagsView 与 Layout（keep-alive include）需共享同一份 tab 状态，
+// 若放在函数体内每次调用都是新实例，两处状态无法同步。
+const tabs = ref([{ ...HOME }])
+const activePath = ref(HOME.path)
 
+// keep-alive :include 缓存名单——当前已打开标签对应的组件 name 去重集合。
+// 关闭标签时其 name 自动移出 → keep-alive 清除该组件缓存，不会内存泄漏。
+const cachedNames = computed(() => [...new Set(tabs.value.map(t => t.name).filter(Boolean))])
+
+export function useTagsView() {
   // 路由变化时调用：去重新增 tab，并置 active
   const addTab = (route) => {
     if (!route || !route.meta?.title || !isLeafRoute(route)) return
     activePath.value = route.path
     if (tabs.value.some(t => t.path === route.path)) return // 去重
-    tabs.value.push({ path: route.path, title: route.meta.title, affix: false })
+    tabs.value.push({ path: route.path, name: route.name, title: route.meta.title, affix: false })
   }
 
   // 关闭 tab：返回需跳转的 path（关非活跃/affix 返回 null，不跳转）
@@ -66,5 +72,5 @@ export function useTagsView() {
     tabs.value.splice(toIdx, 0, moved)
   }
 
-  return { tabs, activePath, addTab, closeTab, closeOthers, closeAll, moveTab }
+  return { tabs, activePath, cachedNames, addTab, closeTab, closeOthers, closeAll, moveTab }
 }

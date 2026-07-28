@@ -168,7 +168,9 @@
   </div>
 </template>
 
-<script setup>import { ref, onMounted } from 'vue';
+<script setup>
+defineOptions({ name: 'PortfolioBoard' })
+import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Folder, Box, Edit, Delete } from '@element-plus/icons-vue';
 import { portfolioApi } from '@/api';
