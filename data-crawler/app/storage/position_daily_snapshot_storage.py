@@ -77,16 +77,26 @@ class PositionDailySnapshotStorage(StorageBase):
         """获取有快照数据的可选持仓列表（供分析页下拉）。
 
         返回快照表中出现过的 distinct (position_id, fund_code, fund_name)，
+        并 outerjoin position 表补 index_code（关联指数，供「指数分析」跳转）。
         按 position_id 升序。无数据返回空列表。
         """
+        from .position_storage import Position
         session = self.get_session()
         try:
             rows = session.query(
                 PositionDailySnapshot.position_id,
                 PositionDailySnapshot.fund_code,
-                PositionDailySnapshot.fund_name
+                PositionDailySnapshot.fund_name,
+                Position.index_code
+            ).outerjoin(
+                Position, Position.id == PositionDailySnapshot.position_id
             ).distinct().order_by(PositionDailySnapshot.position_id.asc()).all()
-            return [{'position_id': r[0], 'fund_code': r[1], 'fund_name': r[2] or ''} for r in rows]
+            return [{
+                'position_id': r[0],
+                'fund_code': r[1],
+                'fund_name': r[2] or '',
+                'index_code': r[3]
+            } for r in rows]
         finally:
             session.close()
 

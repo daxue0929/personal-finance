@@ -8,7 +8,7 @@ Playwright 网页抓取解析器测试（TDD）
 2. app/parser/fund_web_parser.py - FundWebParser._parse 纯函数（喂真实 HTML fixture）、fetch（mock client）
 
 测试一律 mock 边界（playwright 驱动 / PlaywrightClient），不连真实浏览器、不触网。
-真实 HTML fixture 由浏览器服务抓取后落盘到 tests/fixtures/fundf10_basic.html。
+真实 HTML fixture 由浏览器服务抓取后落盘到 tests/fixtures/fundf10_basic.html。clear
 """
 import os
 from unittest.mock import MagicMock, patch
