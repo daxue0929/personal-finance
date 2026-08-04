@@ -18,7 +18,6 @@ from app.analytics.index_analysis import (
     calc_annualized_return,
     calc_change_distribution,
     calc_monthly_returns,
-    simulate_dca,
     calc_ma_signal,
     calc_bollinger_bands,
     calc_bollinger_signal,
@@ -326,78 +325,6 @@ def test_monthly_returns_single_month():
 
 def test_monthly_returns_empty():
     assert calc_monthly_returns([], []) == []
-
-
-# ==================== 定投模拟 ====================
-
-def test_simulate_dca_monthly():
-    dates = ['2024-01-02', '2024-01-09', '2024-02-01', '2024-02-08', '2024-03-01']
-    closes = [100, 110, 105, 120, 115]
-    result = simulate_dca(dates, closes, 'monthly', 1000)
-
-    # 定投日：01-02(100)、02-01(105)、03-01(115)
-    assert len(result['schedule']) == 3
-    assert result['total_invest'] == pytest.approx(3000)
-    shares = 1000 / 100 + 1000 / 105 + 1000 / 115
-    assert result['total_shares'] == pytest.approx(shares, rel=1e-9)
-    # 最新收盘价 = 115
-    assert result['market_value'] == pytest.approx(shares * 115, rel=1e-6)
-    assert result['profit'] == pytest.approx(shares * 115 - 3000, rel=1e-6)
-    assert result['return_rate'] == pytest.approx((shares * 115 - 3000) / 3000, rel=1e-6)
-    assert result['cost_price'] == pytest.approx(3000 / shares, rel=1e-6)
-
-    # 一次性买入对比：同金额 3000 在首日 100 买入
-    lump = result['lump_sum']
-    assert lump['invest'] == pytest.approx(3000)
-    assert lump['shares'] == pytest.approx(30)
-    assert lump['market_value'] == pytest.approx(30 * 115)
-    assert lump['return_rate'] == pytest.approx(0.15, rel=1e-9)
-
-
-def test_simulate_dca_weekly():
-    # 3 个 ISO 周，每周首个交易日买入
-    dates = ['2024-01-01', '2024-01-02', '2024-01-08', '2024-01-15']
-    closes = [10, 11, 12, 13]
-    result = simulate_dca(dates, closes, 'weekly', 1000)
-    assert len(result['schedule']) == 3  # week1, week2, week3
-    assert result['total_invest'] == pytest.approx(3000)
-
-
-def test_simulate_dca_biweekly():
-    # (iso_week-1)//2 分组：week1-2 一期、week3 一期 -> 2 个定投日
-    dates = ['2024-01-01', '2024-01-02', '2024-01-08', '2024-01-15']
-    closes = [10, 11, 12, 13]
-    result = simulate_dca(dates, closes, 'biweekly', 1000)
-    assert len(result['schedule']) == 2
-    # 定投日：01-01(10)、01-15(13)
-    assert result['schedule'][0]['date'] == '2024-01-01'
-    assert result['schedule'][1]['date'] == '2024-01-15'
-    shares = 1000 / 10 + 1000 / 13
-    assert result['total_shares'] == pytest.approx(shares, rel=1e-9)
-    assert result['market_value'] == pytest.approx(shares * 13, rel=1e-6)
-
-
-def test_simulate_dca_invalid_frequency():
-    with pytest.raises(ValueError):
-        simulate_dca(['2024-01-01'], [100], 'daily', 1000)
-
-
-def test_simulate_dca_empty_data():
-    result = simulate_dca([], [], 'monthly', 1000)
-    assert result['total_invest'] == 0
-    assert result['total_shares'] == 0
-    assert result['schedule'] == []
-    assert result['lump_sum']['invest'] == 0
-
-
-def test_simulate_dca_schedule_fields():
-    dates = ['2024-01-02', '2024-02-01']
-    closes = [100, 105]
-    result = simulate_dca(dates, closes, 'monthly', 1000)
-    row = result['schedule'][0]
-    assert set(row.keys()) >= {'date', 'close', 'shares', 'amount', 'cum_invest', 'cum_shares'}
-    assert row['cum_invest'] == pytest.approx(1000)
-    assert row['cum_shares'] == pytest.approx(10)
 
 
 # ==================== 均线信号 ====================

@@ -228,7 +228,7 @@ def test_execute_task_trace_id_reused(scheduler_with_mock_storage):
     sched._run_record_storage.create_running_record.side_effect = _create
 
     captured_trace_ids = []
-    def task_func():
+    def task_func(force_run=False, **kwargs):
         from app.utils.logger import trace_id_var
         captured_trace_ids.append(trace_id_var.get())
     sched.task_registry['demo_task'] = task_func
@@ -407,6 +407,7 @@ def test_api_tasks_returns_running_flag(api_client):
     fake_task.cron_expression = '0 * * * *'
     fake_task.enabled = 1
     fake_task.description = ''
+    fake_task.func_args = None
     fake_task.create_time = datetime(2026, 7, 18)
     fake_task.update_time = datetime(2026, 7, 18)
 

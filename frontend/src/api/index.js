@@ -96,8 +96,9 @@ export const taskApi = {
   deleteTask: (id) => api.delete(`/tasks/${id}`),
 
   // 立即执行任务（异步：立即返回 triggered，不再同步等任务跑完）
-  runTask: (taskFunc, forceRun = false) =>
-    api.post(`/task/run/${taskFunc}`, { force_run: forceRun }),
+  // funcArgs: 可选 dict，覆盖 DB 中 func_args（运行时参数覆盖）
+  runTask: (taskFunc, forceRun = false, funcArgs = null) =>
+    api.post(`/task/run/${taskFunc}`, { force_run: forceRun, func_args: funcArgs }),
 
   // 查询当前运行中的 task_func 集合（轻量轮询接口，不拉全量列表）
   getRunningTasks: () => api.get('/tasks/running'),
@@ -268,10 +269,7 @@ export const indexApi = {
   getOptions: () => api.get('/indexes/options'),
 
   // 获取指数分析数据（概览+价格序列+均线+成交额+涨跌幅分布+月度收益+均线信号）
-  getAnalysis: (params) => api.get('/indexes/analysis', { params }),
-
-  // 定投模拟
-  getDca: (params) => api.get('/indexes/dca', { params })
+  getAnalysis: (params) => api.get('/indexes/analysis', { params })
 }
 
 // 持仓分析相关API

@@ -53,8 +53,9 @@ def create_control_app(scheduler):
             body = request.get_json(silent=True) or {}
             force_run = body.get('force_run', False)
             triggered_by = body.get('triggered_by', 'manual')
+            func_args = body.get('func_args')
 
-            result = scheduler.run_job_now(task_func, force_run=force_run, triggered_by=triggered_by)
+            result = scheduler.run_job_now(task_func, force_run=force_run, triggered_by=triggered_by, func_args=func_args)
             if result is False:
                 return jsonify({
                     'success': False,

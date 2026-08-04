@@ -3,6 +3,7 @@ from apscheduler.triggers.cron import CronTrigger
 import threading
 import time
 import hashlib
+import json
 import uuid
 from datetime import datetime
 
@@ -61,6 +62,26 @@ class CronTaskScheduler:
         self._run_record_storage = TaskRunRecordStorage()
         self._config_hash = ""
 
+    # ==================== 运行时 func_args 注入 ====================
+
+    def _resolve_func_args(self, task_func_name: str, override: dict = None) -> dict:
+        """解析 task_func 对应的 func_args。
+
+        优先级：override（手动触发）> DB func_args。
+        """
+        if override is not None:
+            return dict(override) if isinstance(override, dict) else {}
+        try:
+            task = self._task_storage.get_task_by_func(task_func_name)
+            if not task or task.func_args is None:
+                return {}
+            if isinstance(task.func_args, str):
+                return json.loads(task.func_args)
+            return dict(task.func_args)
+        except Exception as e:
+            logger.error(f"func_args 解析失败 {task_func_name}: {e}")
+            return {}
+
     def _calculate_config_hash(self, tasks):
         config_str = "\n".join(
             f"{t.task_func}|{t.cron_expression}|{t.enabled}"
@@ -114,12 +135,13 @@ class CronTaskScheduler:
             )
 
     def execute_task_with_record(self, task_func_name, task_name, trigger_type='cron', triggered_by='scheduler'):
-        """执行任务并记录状态（cron 路径同步）。
+        """执行任务并记录状态（cron 路径同步，force_run 永远为 False）。
 
         防重叠：已有 RUNNING 则记 SKIPPED 并 return，不执行。
         否则 INSERT RUNNING -> 跑任务 -> UPDATE SUCCESS/FAILED（记录耗时/错误）。
         trace_id 复用：记录的 trace_id 与任务日志的 trace_id 一致，可串联 system_log。
         异常被捕获记 FAILED，不向上抛（避免 APScheduler 因异常告警；失败信息已入记录表）。
+        注：force_run 仅在手动路径（run_job_now）有意义，cron 路径强制走非交易时段检查。
         """
         if task_func_name not in self.task_registry:
             logger.warning(f"任务 {task_func_name} 未注册")
@@ -144,9 +166,10 @@ class CronTaskScheduler:
 
         start = time.time()
         try:
+            func_kwargs = self._resolve_func_args(task_func_name)
             run_with_trace_context(
                 self.task_registry[task_func_name], task_name,
-                trace_id=trace_id)
+                force_run=False, trace_id=trace_id, **func_kwargs)
             status, error_message = 'SUCCESS', None
         except Exception as e:
             status, error_message = 'FAILED', str(e)
@@ -164,6 +187,7 @@ class CronTaskScheduler:
             self._run_record_storage.reset_stale_running(threshold_minutes=60)
         except Exception as e:
             logger.error(f"启动时重置僵尸 RUNNING 记录异常: {e}")
+        # schema 变更与数据迁移：见 sql/alter/migrate_index_tasks_to_unified.sql，部署时手动执行
         self.load_tasks_from_db()
         self.scheduler.start()
         self._start_check_thread()
@@ -196,13 +220,14 @@ class CronTaskScheduler:
         self._check_thread = threading.Thread(target=check_loop, daemon=True)
         self._check_thread.start()
 
-    def run_job_now(self, task_func_name: str, force_run: bool = False, triggered_by: str = 'manual'):
+    def run_job_now(self, task_func_name: str, force_run: bool = False, triggered_by: str = 'manual', func_args: dict = None):
         """手动触发任务（异步）：立即返回 record_id+trace_id，后台线程跑任务。
 
         - 遇 RUNNING：不触发、不记表，返回 {rejected:True, message:...} 让前端弹框提示。
         - 否则：INSERT RUNNING + 起后台线程跑任务 -> 立即返回 {record_id, trace_id}。
         - 后台线程跑完 UPDATE SUCCESS/FAILED（_run_task_in_thread）。
         - force_run 参数保留兼容（本期不跳过防重叠；后续可扩展）。
+        - func_args: 可选 override，覆盖 DB 中 func_args（运行时参数覆盖）。
         """
         if task_func_name not in self.task_registry:
             logger.warning(f"任务 {task_func_name} 未注册，无法手动触发")
@@ -224,20 +249,21 @@ class CronTaskScheduler:
         # 起后台线程跑任务，立即返回
         thread = threading.Thread(
             target=self._run_task_in_thread,
-            args=(task_func_name, task_name, record_id, trace_id, force_run),
+            args=(task_func_name, task_name, record_id, trace_id, force_run, func_args),
             daemon=True
         )
         thread.start()
 
         return {'record_id': record_id, 'trace_id': trace_id}
 
-    def _run_task_in_thread(self, task_func_name, task_name, record_id, trace_id, force_run=False):
+    def _run_task_in_thread(self, task_func_name, task_name, record_id, trace_id, force_run=False, func_args_override=None):
         """后台线程执行任务（手动触发用）：复用 trace_id，finally UPDATE 状态。"""
         start = time.time()
         try:
+            func_kwargs = self._resolve_func_args(task_func_name, override=func_args_override)
             run_with_trace_context(
                 self.task_registry[task_func_name], task_name,
-                force_run=force_run, trace_id=trace_id)
+                force_run=force_run, trace_id=trace_id, **func_kwargs)
             status, error_message = 'SUCCESS', None
         except Exception as e:
             status, error_message = 'FAILED', str(e)

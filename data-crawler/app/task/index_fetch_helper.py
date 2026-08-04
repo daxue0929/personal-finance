@@ -24,11 +24,12 @@ def is_trading_time() -> bool:
     return datetime.time(9, 0) <= now.time() <= datetime.time(15, 5)
 
 
-def fetch_and_store_index(index_code: str, force_run: bool = False) -> Optional[KcIndexData]:
+def fetch_and_store_index_with_market(index_code: str, market: str, force_run: bool = False) -> Optional[KcIndexData]:
     """拉取指数实时行情并存入 index_info 表。
 
     Args:
-        index_code: 指数代码（须在 KcIndexParser.INDEX_CONFIG 中）
+        index_code: 指数代码
+        market: 'sh' 或 'sz'，由调用方从 task_schedule.func_args 传入
         force_run: True 时跳过交易时段检查
 
     Returns:
@@ -38,7 +39,7 @@ def fetch_and_store_index(index_code: str, force_run: bool = False) -> Optional[
         logger.info("当前不在交易时间内（周一至周五 9:00-15:05），跳过执行")
         return None
 
-    parser = KcIndexParser(index_code)
+    parser = KcIndexParser(index_code, market)
     storage = IndexInfoStorage()
     try:
         index_data = parser.fetch()

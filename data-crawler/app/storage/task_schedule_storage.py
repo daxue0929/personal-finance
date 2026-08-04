@@ -7,7 +7,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Column, BigInteger, String, Integer, DateTime, CHAR, Text
+from sqlalchemy import Column, BigInteger, String, Integer, DateTime, CHAR, Text, JSON
 
 from ..utils.config import get_db_url
 from ..utils.db import get_db_session, get_db_engine
@@ -25,6 +25,7 @@ class TaskSchedule(Base):
     cron_expression = Column(String(100), nullable=False)
     enabled = Column(Integer, default=1)
     description = Column(Text)
+    func_args = Column(JSON, nullable=True)
     del_flag = Column(CHAR(1), default='1')
     create_by = Column(String(64))
     create_time = Column(DateTime)
@@ -96,7 +97,8 @@ class TaskScheduleStorage(StorageBase):
             session.close()
 
     def create_task(self, task_name: str, task_func: str, cron_expression: str,
-                   enabled: int = 1, description: str = None, create_by: str = 'system') -> Optional[TaskSchedule]:
+                   enabled: int = 1, description: str = None, func_args: dict = None,
+                   create_by: str = 'system') -> Optional[TaskSchedule]:
         session = self.get_session()
         try:
             new_task = TaskSchedule(
@@ -105,6 +107,7 @@ class TaskScheduleStorage(StorageBase):
                 cron_expression=cron_expression,
                 enabled=enabled,
                 description=description,
+                func_args=func_args,
                 create_by=create_by,
                 create_time=get_beijing_now(),
                 update_by=create_by,
@@ -133,8 +136,11 @@ class TaskScheduleStorage(StorageBase):
                 logger.warning(f"任务 {task_id} 不存在")
                 return False
 
+            # 显式白名单：仅允许这些列被 update_task 改动（防止 hasattr 太宽松）
+            allowed = {'task_name', 'task_func', 'cron_expression', 'enabled',
+                       'description', 'func_args', 'del_flag', 'update_by'}
             for key, value in kwargs.items():
-                if hasattr(task, key) and key not in ['id', 'create_time']:
+                if key in allowed:
                     setattr(task, key, value)
 
             task.update_time = get_beijing_now()

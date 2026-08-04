@@ -30,32 +30,26 @@ class KcIndexData:
 
 
 class KcIndexParser:
-    """指数解析器 - 支持科创50/100、沪深300、创业板50"""
+    """指数解析器 - market 由调用方传入，不再硬编码 INDEX_CONFIG"""
 
     TENCENT_URL = "https://qt.gtimg.cn/q={market}{index_code}"
+    SUPPORTED_MARKETS = ('sh', 'sz')
 
-    INDEX_CONFIG = {
-        '000688': {'name': '科创50', 'market': 'sh'},
-        '000698': {'name': '科创100', 'market': 'sh'},
-        '000300': {'name': '沪深300', 'market': 'sh'},
-        '399673': {'name': '创业板50', 'market': 'sz'},
-    }
-    
-    def __init__(self, index_code: str = '000688'):
+    def __init__(self, index_code: str, market: str):
         """
         初始化指数解析器
 
         Args:
-            index_code: 指数代码，支持 '000688'(科创50)/'000698'(科创100)/
-                        '000300'(沪深300)/'399673'(创业板50)
+            index_code: 指数代码，任意 6 位字符串（由调用方保证）
+            market: 市场前缀，'sh'（沪）或 'sz'（深）
         """
-        if index_code not in self.INDEX_CONFIG:
-            raise ValueError(f"不支持的指数代码: {index_code}，支持的代码: {list(self.INDEX_CONFIG.keys())}")
+        if market not in self.SUPPORTED_MARKETS:
+            raise ValueError(f"market 必须是 sh/sz, got {market!r}")
 
         self.index_code = index_code
-        self.index_name = self.INDEX_CONFIG[index_code]['name']
-        self.market = self.INDEX_CONFIG[index_code]['market']
-        
+        self.index_name = ''  # 名称由 DB 维护，不再硬编码
+        self.market = market
+
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -108,22 +102,15 @@ class KcIndexParser:
             pass
         return None
 
-    @classmethod
-    def get_supported_indices(cls) -> list:
-        """获取支持的指数列表"""
-        return [
-            {'code': code, 'name': info['name']}
-            for code, info in cls.INDEX_CONFIG.items()
-        ]
-
 
 if __name__ == '__main__':
     # 手动验证：遍历所有支持指数，打印抓取结果（含 sh/sz 前缀）
-    for code, info in KcIndexParser.INDEX_CONFIG.items():
+    samples = [('000688', 'sh'), ('000698', 'sh'), ('000300', 'sh'), ('399673', 'sz')]
+    for code, market in samples:
         print("=" * 50)
-        print(f"测试 {info['name']}({code})  前缀: {info['market']}")
+        print(f"测试 指数 {code}  前缀: {market}")
         print("=" * 50)
-        result = KcIndexParser(code).fetch()
+        result = KcIndexParser(code, market).fetch()
         if result:
             print(f"  收盘价: {result.close_price}")
             print(f"  涨跌幅: {result.change_percent:+.2f}%")

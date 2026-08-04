@@ -106,6 +106,21 @@
         <el-form-item label="描述">
           <el-input v-model="formData.description" type="textarea" placeholder="请输入任务描述" />
         </el-form-item>
+        <el-form-item label="函数参数">
+          <div v-if="!funcArgs.length" style="color: #999; font-size: 12px; margin-bottom: 8px;">暂未配置参数</div>
+          <el-row :gutter="8" v-for="(kv, idx) in funcArgs" :key="idx" style="margin-bottom: 8px;">
+            <el-col :span="8">
+              <el-input v-model="kv.key" placeholder="key" />
+            </el-col>
+            <el-col :span="13">
+              <el-input v-model="kv.value" placeholder="value" />
+            </el-col>
+            <el-col :span="3">
+              <el-button :icon="Delete" @click="funcArgs.splice(idx, 1)" />
+            </el-col>
+          </el-row>
+          <el-button size="small" @click="funcArgs.push({ key: '', value: '' })">+ 新增参数</el-button>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -174,6 +189,7 @@
 defineOptions({ name: 'TaskManage' })
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete } from '@element-plus/icons-vue'
 import { taskApi } from '@/api'
 
 const tasks = ref([])
@@ -201,6 +217,9 @@ const formData = ref({
   enabled: true,
   description: ''
 })
+
+// 函数参数（KV 编辑）
+const funcArgs = ref([])
 
 // 执行记录弹窗相关
 const historyVisible = ref(false)
@@ -293,6 +312,7 @@ const showAddDialog = () => {
     enabled: true,
     description: ''
   }
+  funcArgs.value = []
   dialogVisible.value = true
 }
 
@@ -307,6 +327,10 @@ const showEditDialog = (row) => {
     enabled: row.enabled,
     description: row.description
   }
+  // 回显 func_args（Object.entries 拆 KV）
+  funcArgs.value = row.func_args
+    ? Object.entries(row.func_args).map(([k, v]) => ({ key: k, value: String(v) }))
+    : []
   dialogVisible.value = true
 }
 
@@ -317,12 +341,18 @@ const submitForm = async () => {
     return
   }
 
+  // 序列化 KV 为 func_args 对象（key 空白的行过滤掉）
+  const func_args = Object.fromEntries(
+    funcArgs.value.filter(x => x.key).map(x => [x.key, x.value])
+  )
+
   try {
+    const payload = { ...formData.value, func_args }
     if (isEdit.value) {
-      await taskApi.updateTask(editId.value, formData.value)
+      await taskApi.updateTask(editId.value, payload)
       ElMessage.success('更新成功')
     } else {
-      await taskApi.createTask(formData.value)
+      await taskApi.createTask(payload)
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false

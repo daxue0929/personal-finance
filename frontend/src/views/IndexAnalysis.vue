@@ -80,6 +80,12 @@
       <div ref="mainChartRef" style="height: 400px;"></div>
     </el-card>
 
+    <!-- PE(TTM) 走势 -->
+    <el-card style="margin-bottom: 16px; box-shadow: none;" :body-style="{ padding: '16px 20px' }">
+      <template #header><span style="font-weight: 500;">PE(TTM) 走势</span></template>
+      <div ref="peChartRef" style="height: 300px;"></div>
+    </el-card>
+
     <!-- 双图：涨跌幅分布 + 月度收益 -->
     <el-row :gutter="16" style="margin-bottom: 16px;">
       <el-col :xs="24" :md="12">
@@ -96,49 +102,12 @@
       </el-col>
     </el-row>
     </div>
-
-    <!-- 定投模拟 -->
-    <el-card style="box-shadow: none;" :body-style="{ padding: '16px 20px' }" v-loading="dcaLoading">
-      <template #header><span style="font-weight: 500;">定投模拟</span></template>
-      <el-row :gutter="24">
-        <!-- 参数 -->
-        <el-col :xs="24" :md="8">
-          <el-form label-width="90px" style="max-width: 320px;">
-            <el-form-item label="定投频率">
-              <el-select v-model="dcaForm.frequency" @change="fetchDca">
-                <el-option label="每周" value="weekly" />
-                <el-option label="每两周" value="biweekly" />
-                <el-option label="每月" value="monthly" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="每次金额">
-              <el-input-number v-model="dcaForm.amount" :min="100" :step="100" @change="fetchDca" />
-            </el-form-item>
-            <el-form-item label="区间">
-              <span style="color: #909399; font-size: 13px;">{{ dateRangeText }}</span>
-            </el-form-item>
-          </el-form>
-        </el-col>
-        <!-- 结果 -->
-        <el-col :xs="24" :md="16">
-          <el-row :gutter="12">
-            <el-col :span="8" v-for="c in dcaCards" :key="c.label">
-              <div class="metric-card" :style="{ borderLeftColor: c.color || '#409EFF' }">
-                <div class="metric-label">{{ c.label }}</div>
-                <div class="metric-value" :style="{ color: c.valueColor || '#303133', fontSize: '20px' }">{{ c.value }}</div>
-              </div>
-            </el-col>
-          </el-row>
-          <div ref="dcaChartRef" style="height: 300px; margin-top: 16px;"></div>
-        </el-col>
-      </el-row>
-    </el-card>
   </div>
 </template>
 
 <script setup>
 defineOptions({ name: 'IndexAnalysis' })
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { TrendCharts, DataLine, Warning, Opportunity, InfoFilled } from '@element-plus/icons-vue'
@@ -169,8 +138,6 @@ const changeDist = ref([])
 const monthlyReturns = ref([])
 const maSignal = ref({ suggestion: '', ma60_diff_pct: null, ma250_diff_pct: null })
 const bollSignal = ref({ suggestion: '', type: 'info' })
-const dcaResult = ref({})
-const dcaLoading = ref(false)
 const analysisLoading = ref(false)
 
 const quickRanges = [
@@ -189,13 +156,11 @@ const endDate = ref('')
 const disableStart = (date) => endDate.value ? date.getTime() > new Date(endDate.value).getTime() : false
 const disableEnd = (date) => startDate.value ? date.getTime() < new Date(startDate.value).getTime() : false
 
-const dcaForm = reactive({ frequency: 'monthly', amount: 1000 })
-
 // 图表
 const { chartRef: mainChartRef, setOption: setMain } = useEChart()
 const { chartRef: distChartRef, setOption: setDist } = useEChart()
 const { chartRef: monthlyChartRef, setOption: setMonthly } = useEChart()
-const { chartRef: dcaChartRef, setOption: setDca } = useEChart()
+const { chartRef: peChartRef, setOption: setPe } = useEChart()
 
 const fmtDate = (d) => {
   const y = d.getFullYear()
@@ -203,13 +168,6 @@ const fmtDate = (d) => {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
-
-const dateRangeText = computed(() => {
-  if (startDate.value && endDate.value) return `${startDate.value} 至 ${endDate.value}`
-  if (startDate.value) return `${startDate.value} 至今`
-  if (endDate.value) return `至 ${endDate.value}`
-  return '全部区间'
-})
 
 // 智能信号卡片：横向排列，未来新增信号只需往数组 push 一项
 const ICON_MAP = { warning: Warning, success: Opportunity, info: InfoFilled }
@@ -248,24 +206,6 @@ const overviewCards = computed(() => {
     { label: '年化波动率', value: pct(o.annualized_volatility), color: '#E6A23C' },
     { label: '年化收益率', value: pct(o.annualized_return), valueColor: (o.annualized_return || 0) >= 0 ? UP : DOWN, color: (o.annualized_return || 0) >= 0 ? UP : DOWN },
     { label: '日均成交额(亿)', value: num(o.avg_amount), color: C_AMOUNT }
-  ]
-})
-
-// 定投结果卡片
-const dcaCards = computed(() => {
-  const r = dcaResult.value
-  if (!r || !r.total_invest) return []
-  const profit = r.profit
-  const profitColor = profit >= 0 ? UP : DOWN
-  return [
-    { label: '累计投入(元)', value: num(r.total_invest, 0), color: '#91CC75' },
-    { label: '累计份额', value: num(r.total_shares, 2), color: C_CLOSE },
-    { label: '持有成本', value: num(r.cost_price), color: '#909399' },
-    { label: '当前市值(元)', value: num(r.market_value, 0), color: C_CLOSE },
-    { label: '累计收益(元)', value: num(profit, 0), valueColor: profitColor, color: profitColor },
-    { label: '定投收益率', value: pct(r.return_rate), valueColor: profitColor, color: profitColor },
-    { label: '一次性买入收益率', value: pct(r.lump_sum?.return_rate), valueColor: (r.lump_sum?.return_rate || 0) >= 0 ? UP : DOWN, color: '#FAC858' },
-    { label: '定投期数', value: (r.schedule?.length || 0) + ' 期', color: '#909399' }
   ]
 })
 
@@ -332,29 +272,11 @@ const fetchAnalysis = async () => {
     renderMain()
     renderDist()
     renderMonthly()
-    fetchDca()
+    renderPe()
   } catch (e) {
     ElMessage.error('获取分析数据失败')
   } finally {
     analysisLoading.value = false
-  }
-}
-
-const fetchDca = async () => {
-  if (!series.value.length) return
-  dcaLoading.value = true
-  const params = { index_code: indexCode.value, frequency: dcaForm.frequency, amount: dcaForm.amount }
-  if (startDate.value) params.start_date = startDate.value
-  if (endDate.value) params.end_date = endDate.value
-  try {
-    const res = await indexApi.getDca(params)
-    dcaResult.value = res
-    await nextTick()
-    renderDca()
-  } catch (e) {
-    ElMessage.error('定投模拟失败')
-  } finally {
-    dcaLoading.value = false
   }
 }
 
@@ -468,23 +390,25 @@ const renderMonthly = () => {
   })
 }
 
-const renderDca = () => {
-  const r = dcaResult.value
-  const sched = r.schedule || []
-  if (!sched.length) { setDca({}); return }
-  const dates = sched.map(p => p.date)
-  const lumpShares = r.lump_sum?.shares || 0
-  setDca({
-    tooltip: { trigger: 'axis', valueFormatter: (v) => (v == null ? '-' : Number(v).toFixed(2) + ' 元') },
-    legend: { data: ['累计投入', '定投市值', '一次性买入'], top: 0 },
-    grid: { left: 60, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: 'category', data: dates },
-    yAxis: { type: 'value', name: '元' },
-    series: [
-      { name: '累计投入', type: 'line', data: sched.map(p => Number(p.cum_invest.toFixed(2))), itemStyle: { color: '#91CC75' }, symbol: 'none' },
-      { name: '定投市值', type: 'line', data: sched.map(p => Number((p.cum_shares * p.close).toFixed(2))), itemStyle: { color: '#EE6666' }, symbol: 'none' },
-      { name: '一次性买入', type: 'line', data: sched.map(p => Number((lumpShares * p.close).toFixed(2))), itemStyle: { color: '#FAC858' }, symbol: 'none' }
-    ]
+const renderPe = () => {
+  const s = series.value
+  if (!s.length) { setPe({}); return }
+  setPe({
+    tooltip: { trigger: 'axis', valueFormatter: (v) => (v == null ? '-' : Number(v).toFixed(2)) },
+    grid: { left: 60, right: 20, top: 20, bottom: 50 },
+    xAxis: { type: 'category', data: s.map(p => p.date), axisLabel: { rotate: 45 } },
+    yAxis: { type: 'value', name: 'PE(TTM)', scale: true },
+    dataZoom: [
+      { type: 'inside' },
+      { type: 'slider', height: 16, bottom: 10 }
+    ],
+    series: [{
+      name: 'PE(TTM)', type: 'line', smooth: true, symbol: 'none',
+      data: s.map(p => p.pe_ratio || null),
+      lineStyle: { width: 2, color: '#9C27B0' },
+      itemStyle: { color: '#9C27B0' },
+      connectNulls: true
+    }]
   })
 }
 

@@ -15,17 +15,9 @@ from app.parser.kc_index_parser import KcIndexParser, KcIndexData
 
 # ==================== Parser: market + URL 前缀 ====================
 
-def test_index_config_contains_new_indexes():
-    """INDEX_CONFIG 含沪深300(sh) 与创业板50(sz)，且带 market 字段"""
-    assert '000300' in KcIndexParser.INDEX_CONFIG
-    assert KcIndexParser.INDEX_CONFIG['000300']['market'] == 'sh'
-    assert '399673' in KcIndexParser.INDEX_CONFIG
-    assert KcIndexParser.INDEX_CONFIG['399673']['market'] == 'sz'
-
-
 def test_parser_hs300_uses_sh_prefix():
     """沪深300 用 sh 前缀"""
-    p = KcIndexParser('000300')
+    p = KcIndexParser('000300', market='sh')
     assert p.market == 'sh'
     url = p.TENCENT_URL.format(market=p.market, index_code=p.index_code)
     assert url == 'https://qt.gtimg.cn/q=sh000300'
@@ -33,7 +25,7 @@ def test_parser_hs300_uses_sh_prefix():
 
 def test_parser_cyb50_uses_sz_prefix():
     """创业板50 用 sz 前缀（深圳）"""
-    p = KcIndexParser('399673')
+    p = KcIndexParser('399673', market='sz')
     assert p.market == 'sz'
     url = p.TENCENT_URL.format(market=p.market, index_code=p.index_code)
     assert url == 'https://qt.gtimg.cn/q=sz399673'
@@ -41,14 +33,14 @@ def test_parser_cyb50_uses_sz_prefix():
 
 def test_parser_existing_kc50_still_sh():
     """现有科创50 仍为 sh"""
-    p = KcIndexParser('000688')
+    p = KcIndexParser('000688', market='sh')
     assert p.market == 'sh'
 
 
-def test_parser_unsupported_code_raises():
-    """不支持代码仍 raise ValueError（回归保护）"""
+def test_parser_invalid_market_raises():
+    """market 非法 -> ValueError"""
     with pytest.raises(ValueError):
-        KcIndexParser('999999')
+        KcIndexParser('000300', market='xx')
 
 
 # ==================== Parser: _parse 提取交易日 ====================
@@ -60,7 +52,7 @@ def _make_tencent_content(parts):
 
 def test_parse_extracts_trade_date():
     """_parse 从 parts[30] 提取真实交易日（YYYYMMDDHHMMSS -> YYYY-MM-DD）"""
-    parser = KcIndexParser('000300')
+    parser = KcIndexParser('000300', market='sh')
     parts = ['0'] * 50
     parts[1] = '沪深300'
     parts[3] = '4649.19'
@@ -77,7 +69,7 @@ def test_parse_extracts_trade_date():
 
 def test_parse_trade_date_none_when_missing():
     """parts[30] 为空/缺失 -> trade_date None（调用方 fallback today）"""
-    parser = KcIndexParser('000300')
+    parser = KcIndexParser('000300', market='sh')
     parts = ['0'] * 50
     parts[30] = ''
     result = parser._parse(_make_tencent_content(parts))
@@ -85,7 +77,7 @@ def test_parse_trade_date_none_when_missing():
     assert result.trade_date is None
 
 
-# ==================== Helper: fetch_and_store_index ====================
+# ==================== Helper: fetch_and_store_index_with_market ====================
 
 def _fake_index_data(code='000300', name='沪深300'):
     return KcIndexData(
@@ -102,15 +94,15 @@ def _fake_index_data(code='000300', name='沪深300'):
 @patch('app.task.index_fetch_helper.IndexInfoStorage')
 def test_fetch_and_store_index_success(mock_storage_cls, mock_parser_cls):
     """force_run 时拉取并入库，dict 含 index_type/source，返回 KcIndexData"""
-    from app.task.index_fetch_helper import fetch_and_store_index
+    from app.task.index_fetch_helper import fetch_and_store_index_with_market
     mock_parser_cls.return_value.fetch.return_value = _fake_index_data()
     mock_storage = mock_storage_cls.return_value
 
-    result = fetch_and_store_index('000300', force_run=True)
+    result = fetch_and_store_index_with_market('000300', 'sh', force_run=True)
 
     assert isinstance(result, KcIndexData)
     assert result.index_code == '000300'
-    mock_parser_cls.assert_called_once_with('000300')
+    mock_parser_cls.assert_called_once_with('000300', 'sh')
     mock_storage.create_or_update_index_info.assert_called_once()
     data = mock_storage.create_or_update_index_info.call_args[0][0]
     assert data['index_code'] == '000300'
@@ -125,8 +117,8 @@ def test_fetch_and_store_index_success(mock_storage_cls, mock_parser_cls):
 @patch('app.task.index_fetch_helper.IndexInfoStorage')
 def test_fetch_and_store_index_skip_non_trading(mock_storage_cls, mock_parser_cls, _):
     """非交易时段且非 force_run：跳过，不拉取不入库"""
-    from app.task.index_fetch_helper import fetch_and_store_index
-    result = fetch_and_store_index('000300', force_run=False)
+    from app.task.index_fetch_helper import fetch_and_store_index_with_market
+    result = fetch_and_store_index_with_market('000300', 'sh', force_run=False)
     assert result is None
     mock_parser_cls.assert_not_called()
     mock_storage_cls.assert_not_called()
@@ -136,11 +128,11 @@ def test_fetch_and_store_index_skip_non_trading(mock_storage_cls, mock_parser_cl
 @patch('app.task.index_fetch_helper.IndexInfoStorage')
 def test_fetch_and_store_index_no_data(mock_storage_cls, mock_parser_cls):
     """fetch 返回 None：不入库，返回 None"""
-    from app.task.index_fetch_helper import fetch_and_store_index
+    from app.task.index_fetch_helper import fetch_and_store_index_with_market
     mock_parser_cls.return_value.fetch.return_value = None
     mock_storage = mock_storage_cls.return_value
 
-    result = fetch_and_store_index('000300', force_run=True)
+    result = fetch_and_store_index_with_market('000300', 'sh', force_run=True)
 
     assert result is None
     mock_storage.create_or_update_index_info.assert_not_called()

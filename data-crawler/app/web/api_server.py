@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
 from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage
-from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, simulate_dca, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series, filter_trading_days
+from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series, filter_trading_days
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
 
@@ -336,9 +336,11 @@ def run_task(task_func):
     """立即执行指定任务（异步：转发到调度器，立即返回 triggered+record_id+trace_id）"""
     try:
         force_run = False
+        func_args = None
         try:
             if request.json:
                 force_run = request.json.get('force_run', False)
+                func_args = request.json.get('func_args')
         except Exception:
             pass
 
@@ -348,7 +350,7 @@ def run_task(task_func):
         except Exception:
             pass
 
-        data, code = scheduler_proxy.run_task(task_func, force_run=force_run, triggered_by=triggered_by)
+        data, code = scheduler_proxy.run_task(task_func, force_run=force_run, triggered_by=triggered_by, func_args=func_args)
         return jsonify(data), code
     except Exception as e:
         logger.error(f"触发任务失败: {e}")
@@ -419,6 +421,7 @@ def get_tasks():
                     'cron_expression': task.cron_expression,
                     'enabled': task.enabled == 1,
                     'description': task.description,
+                    'func_args': task.func_args if task.func_args is not None else None,
                     'next_run_time': job_status['next_run_time'] if job_status else None,
                     'running': task.task_func in running_funcs,
                     'create_time': str(task.create_time),
@@ -453,6 +456,7 @@ def get_task(task_id):
                 'cron_expression': task.cron_expression,
                 'enabled': task.enabled == 1,
                 'description': task.description,
+                'func_args': task.func_args if task.func_args is not None else None,
                 'next_run_time': job_status['next_run_time'] if job_status else None,
                 'create_time': str(task.create_time),
                 'update_time': str(task.update_time)
@@ -485,6 +489,7 @@ def create_task():
             cron_expression=data['cron_expression'],
             enabled=data.get('enabled', 1),
             description=data.get('description'),
+            func_args=data.get('func_args'),
             create_by='api'
         )
 
@@ -519,6 +524,8 @@ def update_task(task_id):
             update_fields['enabled'] = 1 if data['enabled'] else 0
         if 'description' in data:
             update_fields['description'] = data['description']
+        if 'func_args' in data:
+            update_fields['func_args'] = data['func_args']
         update_fields['update_by'] = 'api'
 
         if _task_storage.update_task(task_id, **update_fields):
@@ -2374,6 +2381,7 @@ def get_index_analysis():
                 'volume': r['volume'], 'amount': r['amount'],
                 'ma5': ma5[i], 'ma20': ma20[i], 'ma60': ma60[i], 'ma250': ma250[i],
                 'boll_upper': boll_upper[i], 'boll_middle': boll_middle[i], 'boll_lower': boll_lower[i],
+                'pe_ratio': r.get('pe_ratio', 0) or 0,
             })
 
         latest = rows[-1]
@@ -2423,44 +2431,6 @@ def get_index_analysis():
         }), 200
     except Exception as e:
         logger.error(f"指数分析失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/indexes/dca', methods=['GET'])
-@log_request
-def get_index_dca():
-    """定投模拟（含一次性买入对比）"""
-    index_code = request.args.get('index_code', '')
-    if not index_code:
-        return jsonify({'error': '缺少参数 index_code'}), 400
-    frequency = request.args.get('frequency', 'monthly')
-    try:
-        amount = float(request.args.get('amount', 1000))
-    except ValueError:
-        return jsonify({'error': 'amount 必须为数字'}), 400
-    if frequency not in ('weekly', 'biweekly', 'monthly'):
-        return jsonify({'error': 'frequency 仅支持 weekly/biweekly/monthly'}), 400
-
-    try:
-        start_date = request.args.get('start_date', '')
-        end_date = request.args.get('end_date', '')
-        rows = _index_storage.get_index_history(
-            index_code=index_code,
-            start_date=start_date if start_date else None,
-            end_date=end_date if end_date else None
-        )
-        dates = [r['trade_date'] for r in rows]
-        closes = [r['close_price'] for r in rows]
-        result = simulate_dca(dates, closes, frequency, amount)
-        result['index_code'] = index_code
-        result['frequency'] = frequency
-        result['amount'] = amount
-        result['latest_close'] = closes[-1] if closes else 0.0
-        return jsonify(result), 200
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        logger.error(f"定投模拟失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 
