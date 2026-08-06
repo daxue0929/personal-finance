@@ -12,6 +12,7 @@ from .user_storage import User, UserStorage
 from .position_daily_snapshot_storage import PositionDailySnapshot, PositionDailySnapshotStorage
 from .fund_dip_plan_storage import FundDipPlan, FundDipPlanStorage
 from .task_run_record_storage import TaskRunRecord, TaskRunRecordStorage
+from .index_basic_storage import IndexBasic, IndexBasicStorage
 
 __all__ = [
     'FundInfo', 'FundInfoStorage',
@@ -27,5 +28,6 @@ __all__ = [
     'User', 'UserStorage',
     'PositionDailySnapshot', 'PositionDailySnapshotStorage',
     'FundDipPlan', 'FundDipPlanStorage',
-    'TaskRunRecord', 'TaskRunRecordStorage'
+    'TaskRunRecord', 'TaskRunRecordStorage',
+    'IndexBasic', 'IndexBasicStorage',
 ]

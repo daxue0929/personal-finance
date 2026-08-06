@@ -222,9 +222,47 @@ class IndexInfoStorage(StorageBase):
                 existing.update_by = 'crawler'
                 logger.info(f"指数 {index_code} 在 {trade_date} 的数据已更新")
             else:
+                # 4 道 name 兜底（PRD "index-basic-table" §AC-2 T2.8）：
+                # 优先级：index_data > index_basic(DB) > INDEX_NAME_MAP(parser) > 历史 index_info > ''
+                # 每道独立 try/except，失败降级到下一道，不中断主流程。
+                name = index_data.get('index_name', '')
+
+                # 兜底 1：入参已有 name 则跳过（最高优先级）
+                if not name:
+                    # 兜底 2：查 index_basic 元表（DB 真源）
+                    try:
+                        from .index_basic_storage import IndexBasicStorage
+                        basic_row = IndexBasicStorage().get(index_code)
+                        if basic_row and basic_row.index_name:
+                            name = basic_row.index_name
+                    except Exception as e:
+                        logger.warning(f"查询 index_basic {index_code} 失败，降级到下一道: {e}")
+
+                # 兜底 3：查 parser 内置 INDEX_NAME_MAP
+                if not name:
+                    try:
+                        from ..parser.kc_index_parser import KcIndexParser
+                        name = KcIndexParser.INDEX_NAME_MAP.get(index_code, '')
+                    except Exception as e:
+                        logger.warning(f"查 KcIndexParser.INDEX_NAME_MAP 失败，降级到下一道: {e}")
+
+                # 兜底 4：查历史 index_info 最近一条非空 name（保留原兜底）
+                if not name:
+                    try:
+                        prev = session.query(IndexInfo.index_name).filter(
+                            IndexInfo.index_code == index_code,
+                            IndexInfo.del_flag == '1',
+                            IndexInfo.index_name.isnot(None),
+                            IndexInfo.index_name != ''
+                        ).order_by(IndexInfo.trade_date.desc()).first()
+                        if prev:
+                            name = prev[0]
+                    except Exception as e:
+                        logger.warning(f"查历史 index_info name 失败: {e}")
+
                 new_index = IndexInfo(
                     index_code=index_code,
-                    index_name=index_data.get('index_name', ''),
+                    index_name=name,
                     index_type=index_data.get('index_type', '宽基指数'),
                     trade_date=trade_date,
                     open_price=index_data.get('open_price', 0.00),

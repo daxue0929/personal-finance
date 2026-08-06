@@ -9,7 +9,7 @@ import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage, IndexBasicStorage
 from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series, filter_trading_days
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
@@ -26,6 +26,7 @@ _portfolio_position_storage = PortfolioPositionStorage()
 _log_storage = None
 _user_storage = UserStorage()
 _index_storage = IndexInfoStorage()
+_index_basic_storage = IndexBasicStorage()
 _position_snapshot_storage = PositionDailySnapshotStorage()
 _dip_plan_storage = FundDipPlanStorage()
 _run_record_storage = TaskRunRecordStorage()
@@ -2589,6 +2590,146 @@ def get_position_snapshots():
         return jsonify({'data': data, 'total': total, 'page': page, 'page_size': page_size}), 200
     except Exception as e:
         logger.error(f"获取持仓快照列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 指数基础管理 API ====================
+# 配套功能：PRD "index-basic-table"
+# 元信息 CRUD，供前端 /index-basic 管理页用
+
+_ALLOWED_INDEX_BASIC_FIELDS = frozenset({'market', 'index_name', 'index_type', 'enabled'})
+
+
+def _index_basic_to_dict(row):
+    """IndexBasic ORM 行转字典（前端友好）"""
+    return {
+        'index_code': row.index_code,
+        'market': row.market,
+        'index_name': row.index_name,
+        'index_type': row.index_type,
+        'enabled': int(row.enabled) if row.enabled is not None else 0,
+        'del_flag': row.del_flag,
+        'create_time': str(row.create_time) if row.create_time else None,
+        'update_time': str(row.update_time) if row.update_time else None,
+    }
+
+
+@app.route('/api/index-basics', methods=['GET'])
+@log_request
+def get_index_basics():
+    """获取指数基础列表（分页 + 过滤）。
+    Query: include_disabled, index_code, index_type, page, page_size
+    """
+    try:
+        include_disabled = request.args.get('include_disabled', 'false').lower() == 'true'
+        index_code = (request.args.get('index_code') or '').strip() or None
+        index_type = (request.args.get('index_type') or '').strip() or None
+        try:
+            page = int(request.args.get('page', 1))
+            page_size = int(request.args.get('page_size', 20))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'page / page_size 必须为整数'}), 400
+        rows, total = _index_basic_storage.list_all(
+            include_disabled=include_disabled,
+            index_code=index_code,
+            index_type=index_type,
+            page=page,
+            page_size=page_size,
+        )
+        return jsonify({
+            'data': [_index_basic_to_dict(r) for r in rows],
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+        }), 200
+    except Exception as e:
+        logger.error(f"获取指数基础列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/index-basics/<string:index_code>', methods=['GET'])
+@log_request
+def get_index_basic(index_code):
+    """获取单条指数基础详情"""
+    try:
+        row = _index_basic_storage.get(index_code)
+        if not row or row.del_flag != '1':
+            return jsonify({'error': '指数不存在'}), 404
+        return jsonify({'data': _index_basic_to_dict(row)}), 200
+    except Exception as e:
+        logger.error(f"获取指数基础 {index_code} 失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/index-basics', methods=['POST'])
+@log_request
+def create_index_basic():
+    """新增指数基础。body: {index_code, market, index_name, index_type?, enabled?}"""
+    try:
+        data = request.json or {}
+        if not _index_basic_storage.create(data):
+            return jsonify({'error': '创建指数基础失败'}), 500
+        return jsonify({
+            'success': True,
+            'message': '创建成功',
+            'data': {'index_code': data.get('index_code', '')},
+        }), 201
+    except ValueError as e:
+        # 字段验证失败 / 主键冲突
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"创建指数基础失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/index-basics/<string:index_code>', methods=['PUT'])
+@log_request
+def update_index_basic(index_code):
+    """更新指数基础。body 白名单外字段被忽略；index_code 不可改（业务主键）。"""
+    try:
+        data = request.json or {}
+        # 白名单过滤：只保留 _ALLOWED_INDEX_BASIC_FIELDS
+        update_data = {k: v for k, v in data.items() if k in _ALLOWED_INDEX_BASIC_FIELDS}
+        if not _index_basic_storage.update(index_code, update_data):
+            return jsonify({'error': '指数不存在'}), 404
+        return jsonify({'success': True, 'message': '更新成功'}), 200
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"更新指数基础 {index_code} 失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/index-basics/<string:index_code>', methods=['DELETE'])
+@log_request
+def delete_index_basic(index_code):
+    """软删指数基础（del_flag='0'，index_info 历史保留）"""
+    try:
+        if not _index_basic_storage.soft_delete(index_code):
+            return jsonify({'error': '指数不存在'}), 404
+        return jsonify({'success': True, 'message': '删除成功'}), 200
+    except Exception as e:
+        logger.error(f"删除指数基础 {index_code} 失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/index-basics/<string:index_code>/toggle', methods=['POST'])
+@log_request
+def toggle_index_basic(index_code):
+    """启停：body {enabled: 0|1}"""
+    try:
+        data = request.json or {}
+        try:
+            enabled_val = int(data.get('enabled', 1))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'enabled 必须为 0 或 1'}), 400
+        if enabled_val not in (0, 1):
+            return jsonify({'error': 'enabled 必须为 0 或 1'}), 400
+        if not _index_basic_storage.toggle_enabled(index_code, enabled_val == 1):
+            return jsonify({'error': '指数不存在'}), 404
+        return jsonify({'success': True, 'message': '已更新', 'enabled': enabled_val}), 200
+    except Exception as e:
+        logger.error(f"启停指数基础 {index_code} 失败: {e}")
         return jsonify({'error': str(e)}), 500
 
 

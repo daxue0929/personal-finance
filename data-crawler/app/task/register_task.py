@@ -30,6 +30,7 @@ def register_all_tasks(scheduler):
     """
     from .update_fund_net_values_task import update_fund_net_values_task
     from .fetch_index_task import fetch_index_task
+    from .fetch_all_indexes_task import fetch_all_indexes_task
     from .backup_fund_nav_history_task import backup_fund_nav_history_task
     from .calculate_buyer_shares_task import calculate_buyer_shares_task
     from .calculate_seller_amount_task import calculate_seller_amount_task
@@ -52,6 +53,9 @@ def register_all_tasks(scheduler):
         task_func_name = f'fetch_index_task_{index_code}'
         scheduler.register_task(task_func_name, make_wrapper(index_code, _market_for(index_code)))
         logger.info(f"任务 [{task_func_name}] 已注册")
+
+    scheduler.register_task('fetch_all_indexes_task', fetch_all_indexes_task)
+    logger.info("任务 [统一指数遍历抓取任务] 已注册")
 
     scheduler.register_task('backup_fund_nav_history_task', backup_fund_nav_history_task)
     logger.info("任务 [基金净值历史备份任务] 已注册")

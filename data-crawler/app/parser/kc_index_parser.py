@@ -34,6 +34,13 @@ class KcIndexParser:
 
     TENCENT_URL = "https://qt.gtimg.cn/q={market}{index_code}"
     SUPPORTED_MARKETS = ('sh', 'sz')
+    # 已知指数代码 → 中文名。腾讯接口不返回名称，做兜底映射（storage 也有一道 DB 历史兜底，互为 backup）
+    INDEX_NAME_MAP = {
+        '000688': '科创50',
+        '000698': '科创100',
+        '000300': '沪深300',
+        '399673': '创业板50',
+    }
 
     def __init__(self, index_code: str, market: str):
         """
@@ -47,7 +54,8 @@ class KcIndexParser:
             raise ValueError(f"market 必须是 sh/sz, got {market!r}")
 
         self.index_code = index_code
-        self.index_name = ''  # 名称由 DB 维护，不再硬编码
+        # 兜底：已知 code 从 INDEX_NAME_MAP 取；未知 code 返回空，由 storage 再查 DB 历史
+        self.index_name = self.INDEX_NAME_MAP.get(index_code, '')
         self.market = market
 
         self.session = requests.Session()
