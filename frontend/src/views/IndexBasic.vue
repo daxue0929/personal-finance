@@ -148,8 +148,9 @@ const fetchList = async () => {
     if (searchForm.index_code) params.index_code = searchForm.index_code
     if (searchForm.index_type) params.index_type = searchForm.index_type
     const resp = await indexBasicApi.list(params)
-    list.value = resp.data?.data || []
-    total.value = resp.data?.total || 0
+    // axios 响应拦截器已 unwrap：resp = body = {data: [...], total, page, page_size}
+    list.value = resp.data || []
+    total.value = resp.total || 0
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
     list.value = []
