@@ -11,6 +11,7 @@ import SystemLog from '@/views/SystemLog.vue'
 import UserManage from '@/views/UserManage.vue'
 import IndexInfo from '@/views/IndexInfo.vue'
 import IndexAnalysis from '@/views/IndexAnalysis.vue'
+import IndexBasic from '@/views/IndexBasic.vue'
 import PositionManage from '@/views/PositionManage.vue'
 import PositionAnalysis from '@/views/PositionAnalysis.vue'
 
@@ -97,10 +98,16 @@ const routes = [
             meta: { title: '指数信息', sort: 46, parentTitle: '指数分析' }
           },
           {
+            path: '/index/basic',
+            name: 'IndexBasic',
+            component: IndexBasic,
+            meta: { title: '指数基础', sort: 47, parentTitle: '指数分析' }
+          },
+          {
             path: '/index/analysis',
             name: 'IndexAnalysis',
             component: IndexAnalysis,
-            meta: { title: '指数分析', sort: 47, parentTitle: '指数分析' }
+            meta: { title: '指数分析', sort: 48, parentTitle: '指数分析' }
           }
         ]
       },

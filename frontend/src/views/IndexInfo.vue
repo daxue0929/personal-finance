@@ -61,7 +61,11 @@
         <el-table :data="list" style="width: 100%" height="100%" v-loading="loading">
           <el-table-column prop="trade_date" label="交易日期" width="120" />
           <el-table-column prop="index_code" label="指数代码" width="100" />
-          <el-table-column prop="index_name" label="指数名称" width="120" />
+          <el-table-column label="指数名称" width="120">
+            <template #default="{ row }">
+              {{ row.index_name || '—' }}
+            </template>
+          </el-table-column>
           <el-table-column prop="index_type" label="类型" width="100">
             <template #default="{ row }">
               <el-tag size="small">{{ row.index_type || '-' }}</el-tag>

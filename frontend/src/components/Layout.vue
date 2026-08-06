@@ -72,7 +72,7 @@
 import { computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Setting, Wallet, ShoppingCart, Sell, TrendCharts, Folder, Monitor, User, DataAnalysis, Document, DataLine, PieChart, Coin, Histogram, Odometer } from '@element-plus/icons-vue'
+import { Setting, Wallet, ShoppingCart, Sell, TrendCharts, Folder, Monitor, User, DataAnalysis, Document, DataLine, PieChart, Coin, Histogram, Odometer, Files } from '@element-plus/icons-vue'
 import { authApi } from '@/api'
 import TagsView from '@/components/TagsView.vue'
 import { useTagsView } from '@/composables/useTagsView'
@@ -125,6 +125,7 @@ const iconMap = {
   '/position-analysis/analysis': Histogram,
   '/index': DataAnalysis,
   '/index/info': Document,
+  '/index/basic': Files,
   '/index/analysis': DataLine,
   '/tasks': Setting,
   '/system': Monitor,

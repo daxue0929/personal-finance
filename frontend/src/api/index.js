@@ -272,6 +272,23 @@ export const indexApi = {
   getAnalysis: (params) => api.get('/indexes/analysis', { params })
 }
 
+// 指数基础管理 API（PRD "index-basic-table"）
+// 元信息 CRUD，fetch_all_indexes_task 数据源
+export const indexBasicApi = {
+  // 列表（含 include_disabled 控制）
+  list: (params) => api.get('/index-basics', { params }),
+  // 详情
+  get: (code) => api.get(`/index-basics/${code}`),
+  // 新增
+  create: (data) => api.post('/index-basics', data),
+  // 编辑（白名单过滤 index_code）
+  update: (code, data) => api.put(`/index-basics/${code}`, data),
+  // 软删
+  remove: (code) => api.delete(`/index-basics/${code}`),
+  // 启停
+  toggle: (code, enabled) => api.post(`/index-basics/${code}/toggle`, { enabled })
+}
+
 // 持仓分析相关API
 export const positionAnalysisApi = {
   // 获取有快照数据的可选持仓列表（分析页下拉）
