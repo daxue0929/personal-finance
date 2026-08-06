@@ -1,0 +1,22 @@
+{
+  "registry-mirrors": [
+    "https://docker.xuanyuan.me",
+    "https://docker.1ms.run",
+    "https://docker.m.daocloud.io"
+  ],
+
+  "max-concurrent-downloads": 10,
+  "max-download-attempts": 5,
+
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+
+  "live-restore": true,
+
+  "userland-proxy": false,
+
+  "storage-driver": "overlay2"
+}
