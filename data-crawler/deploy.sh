@@ -63,13 +63,12 @@ FULL_VERSION="${MAJOR_VERSION}.${MINOR_VERSION}"
 echo "当前版本号: ${FULL_VERSION}"
 echo ""
 
-echo "[1/3] 拉取 Python 基础镜像..."
-docker pull python:3.12-slim
+echo "[1/2] 构建应用镜像 (版本: ${FULL_VERSION})..."
+# --pull=false 强制用本地缓存（不联网拉 base image）
+# 前提：基础镜像已在本地（首次部署 / 新环境 / 镜像版本更新时先跑 ./prefetch.sh）
+docker build --pull=false -t fund-crawler:${FULL_VERSION} -t fund-crawler:latest .
 
-echo "[2/3] 构建应用镜像 (版本: ${FULL_VERSION})..."
-docker build -t fund-crawler:${FULL_VERSION} -t fund-crawler:latest .
-
-echo "[3/3] 启动服务..."
+echo "[2/2] 启动服务..."
 # browser 镜像/配置通常不变，优先启动且不重建（已运行则不动；首次部署或未运行则启动）
 # --no-deps：不连带启动依赖；--no-recreate：已存在容器不重建
 docker-compose up -d --no-deps --no-recreate browser
