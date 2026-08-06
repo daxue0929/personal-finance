@@ -223,3 +223,116 @@ browser 镜像未更新到 node 代理版。`git pull` 后重建 `fund-browser:l
 
 ### 抓取日志在哪看
 写入 `system_log` 表，前端「系统日志」页面可查；或 `docker compose logs scheduler | grep 抓取成功`。
+
+## 指数基础表（index-basic-table）部署
+
+PRD: `tasks/prd-index-basic-table.md` / Design: `tasks/design-index-basic-table.md` / Tasks: `tasks/tasks-index-basic-table.md`
+
+本特性引入 `index_basic` 元表 + 单条 `fetch_all_indexes_task` 统一抓取任务，配套 6 路由 CRUD + `IndexBasic.vue` 管理页 + 8月5日 `index_info.index_name` 丢失 bug 修复。
+
+### 部署步骤（DBA 手动跑 SQL + 后端代码拉取）
+
+1. **拉取新代码**（含新后端 + 新前端 dist）：
+
+   ```bash
+   cd /path/to/personal-finance
+   git pull
+   ```
+
+2. **运行 SQL 脚本**（按顺序，幂等）：
+
+   ```bash
+   # a) 建 index_basic 元表 + 初始 4 条数据
+   mysql -h 117.72.53.38 -u root -p personal-finance < sql/alter/06_create_index_basic.sql
+
+   # b) 新增 fetch_all_indexes_task + 禁用 4 条老任务
+   mysql -h 117.72.53.38 -u root -p personal-finance < sql/alter/07_migrate_index_tasks_to_loop.sql
+   ```
+
+3. **回填历史空 name 行**（仅 8月5/8月6 受影响，**可选**，否则这两天的 `index_info.index_name` 仍显示空 / `IndexInfo.vue` 表格显示 `—`）：
+
+   ```sql
+   UPDATE index_info a
+   JOIN (
+     SELECT index_code, index_name
+     FROM index_info
+     WHERE del_flag='1' AND index_name IS NOT NULL AND index_name <> ''
+     GROUP BY index_code, index_name
+     ORDER BY index_code, MAX(trade_date) DESC
+   ) b ON a.index_code = b.index_code
+   SET a.index_name = b.index_name
+   WHERE a.del_flag='1' AND (a.index_name IS NULL OR a.index_name = '');
+   ```
+
+   兜底逻辑已让未来新抓取的行**自动**带 name（4 道兜底：入参 > index_basic > INDEX_NAME_MAP > 历史），所以回填只补 8月5/6 那 2 天历史。
+
+4. **重建 web/scheduler 容器**（让新代码生效）：
+
+   ```bash
+   cd data-crawler
+   ./deploy.sh    # 重建 fund-crawler:latest 并重启 web/scheduler
+   ```
+
+5. **手动触发一次统一抓取**（验证全链路）：
+
+   ```bash
+   # 1. 登录
+   curl -s -c ./cookie.txt -X POST http://localhost:5000/api/login \
+     -H "Content-Type: application/json" \
+     -d '{"username":"admin","password":"你的密码"}'
+
+   # 2. 触发 fetch_all_indexes_task
+   curl -s -b ./cookie.txt -X POST http://localhost:5000/api/task/run/fetch_all_indexes_task
+
+   # 3. 看日志
+   docker compose logs --tail 60 scheduler | grep "统一指数遍历抓取"
+   # 期望：成功 4/4 支
+
+   # 4. 看 index_info 当天 name 不再空
+   docker exec mysql_8 mysql -uroot -proot personal-finance -e "
+     SELECT trade_date, index_code, index_name
+     FROM index_info
+     WHERE trade_date = CURDATE() AND del_flag='1'
+     ORDER BY index_code;
+   "
+   # 期望：4 行全有中文名
+   ```
+
+### 部署后验证清单
+
+```sql
+-- 1. index_basic 4 行初始数据
+SELECT * FROM index_basic WHERE del_flag='1';
+-- 期望：4 行（000300/000688/000698/399673）
+
+-- 2. task_schedule 状态：4 老 enabled=0, 1 新 enabled=1
+SELECT task_func, COUNT(*), SUM(enabled)
+  FROM task_schedule
+ WHERE task_func LIKE 'fetch_index_task_%' OR task_func='fetch_all_indexes_task'
+ GROUP BY task_func;
+-- 期望：5 行，老 4 条 enabled=0，新 1 条 enabled=1
+
+-- 3. fetch_all_indexes_task cron 正确
+SELECT task_func, cron_expression, enabled
+  FROM task_schedule WHERE task_func='fetch_all_indexes_task';
+-- 期望：cron='0 9 * * 1-5', enabled=1
+```
+
+### 回滚步骤
+
+如新方案有问题（4 道兜底异常 / ThreadPool 抓取失败 / 管理页 bug 等），一键回老 4 条任务驱动：
+
+```sql
+UPDATE task_schedule SET enabled=1, update_by='rollback', update_time=NOW()
+ WHERE task_func LIKE 'fetch_index_task_%' AND del_flag='1';
+UPDATE task_schedule SET enabled=0, update_by='rollback', update_time=NOW()
+ WHERE task_func='fetch_all_indexes_task' AND del_flag='1';
+```
+
+回滚后**老 4 条 `INDEX_TASK_REGISTRY` wrapper 仍保留**（PRD §3 §7 + tasks §T3.4），立即可调度生效，不需重新部署。
+
+### 注意事项
+
+- **不要**直接 DELETE `index_basic` 行的 `del_flag` 检查：项目无外键约束，软删后 `index_info` 历史行不会自动清理（这是设计如此，符合「软删保留历史」约定）
+- **不要**手动改 `fetch_all_indexes_task` 的 cron 表达式绕过 `task_schedule` 哈希比对：调度器 60s 内会自动热加载新 cron
+- **新增指数**走前端 `/index/basic` 管理页（无需 DBA 改代码）：填 `index_code` + `market` + `index_name` + `enabled=1` 即可，下次 `fetch_all_indexes_task` 自动抓
