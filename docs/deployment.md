@@ -71,6 +71,27 @@ ls -l /etc/timezone   # 确认是文件（-rw-r--r--），不是目录（drwxr-x
 
 ### 5. 构建镜像
 
+**5.1 首次部署：先配 Docker 国内镜像加速（强烈推荐，CN 服务器）**
+
+```bash
+# 服务器上一次性跑：配置 daemon 用国内镜像源（腾讯云 + 网易）
+cd data-crawler
+sudo ./setup-docker-mirror.sh
+# 幂等：重跑不覆盖用户的其他配置项（自动备份 daemon.json）
+# 生效：拉 docker.io 镜像速度 5-10x 提升
+# 注意：mcr.microsoft.com 镜像加速无效（详见脚本末尾注释）
+```
+
+**5.2 预下载基础镜像（一次）**
+
+```bash
+./prefetch.sh
+# 检查 daemon.json 镜像配置（如未配会 WARN）
+# 拉 python:3.12-slim + mcr.microsoft.com/playwright:v1.49.1-noble 到本地
+```
+
+**5.3 构建应用镜像 + 启动**
+
 ```bash
 # 应用镜像（web/scheduler 共用）
 ./deploy.sh    # 会构建 fund-crawler:latest 并启动

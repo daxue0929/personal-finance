@@ -22,6 +22,21 @@ fi
 echo "Docker: $(docker --version)"
 echo ""
 
+# 检查 daemon 是否配了国内镜像加速（CN 服务器强烈推荐）
+# 没配不阻断（开发机可能不需要），但打 WARN 提示
+if [ -f /etc/docker/daemon.json ]; then
+    if grep -q "registry-mirrors" /etc/docker/daemon.json; then
+        echo "✓ 检测到 Docker registry-mirrors 配置（国内加速已生效）"
+    else
+        echo "⚠️  /etc/docker/daemon.json 未配置 registry-mirrors"
+        echo "   服务器下载会很慢，建议跑: sudo ./setup-docker-mirror.sh"
+    fi
+else
+    echo "⚠️  /etc/docker/daemon.json 不存在"
+    echo "   服务器下载会很慢，建议跑: sudo ./setup-docker-mirror.sh"
+fi
+echo ""
+
 # ---- 应用镜像基础 ----
 echo "[1/4] python:3.12-slim (应用镜像基础)..."
 docker pull python:3.12-slim
