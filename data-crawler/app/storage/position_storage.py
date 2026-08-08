@@ -108,14 +108,22 @@ class PositionStorage(StorageBase):
         finally:
             session.close()
 
-    def get_position_by_id(self, position_id: int) -> Optional[Dict]:
-        """根据ID获取持仓"""
+    def get_position_by_id(self, position_id: int,
+                            user_id: Optional[int] = None) -> Optional[Dict]:
+        """根据ID获取持仓
+
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）。
+        防止通过已知 position_id 跨 user 访问别人持仓（持仓分析 cost-index 用）。
+        """
         session = self.get_session()
         try:
-            position = session.query(Position).filter(
+            query = session.query(Position).filter(
                 Position.id == position_id,
                 Position.del_flag == '1'
-            ).first()
+            )
+            if user_id is not None:
+                query = query.filter(Position.user_id == user_id)
+            position = query.first()
             
             if position:
                 return {

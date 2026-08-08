@@ -2605,7 +2605,7 @@ def get_index_analysis():
 def get_position_snapshot_options():
     """获取有快照数据的可选持仓列表（供分析页下拉）"""
     try:
-        data = _position_snapshot_storage.get_position_options()
+        data = _position_snapshot_storage.get_position_options(user_id=_current_user_id())
         return jsonify({'data': data}), 200
     except Exception as e:
         logger.error(f"获取持仓快照选项失败: {e}")
@@ -2629,13 +2629,15 @@ def get_position_snapshot_analysis():
     try:
         start_date = request.args.get('start_date', '') or None
         end_date = request.args.get('end_date', '') or None
+        # multi-user 隔离：所有 storage 调用都打 user_id（admin 视角下为 None=看全部）
+        uid = _current_user_id()
 
         # 交易日历（fund_nav_history 只在交易日有净值），过滤掉非交易日快照点（周末/节假日的无意义平段）
         trading_dates = _nav_storage.get_trading_dates(start_date, end_date)
 
         # 组合级累计收益序列（按日期聚合全部持仓）
         portfolio_rows = _position_snapshot_storage.get_portfolio_snapshot_series(
-            start_date=start_date, end_date=end_date
+            user_id=uid, start_date=start_date, end_date=end_date
         )
         portfolio_rows = filter_trading_days(portfolio_rows, trading_dates)
         portfolio_series = calc_portfolio_profit_series(portfolio_rows)
@@ -2651,23 +2653,24 @@ def get_position_snapshot_analysis():
             except ValueError:
                 return jsonify({'error': 'position_id 必须为整数或 all'}), 400
             series = _position_snapshot_storage.get_position_snapshot_series(
-                position_id=position_id, start_date=start_date, end_date=end_date
+                position_id=position_id, user_id=uid,
+                start_date=start_date, end_date=end_date
             )
             series = filter_trading_days(series, trading_dates)
             overview = calc_position_overview(series)
 
         # 饼图：最新快照日的全部持仓占比（与选中持仓无关）
-        latest_all = _position_snapshot_storage.get_latest_snapshot_all_positions()
+        latest_all = _position_snapshot_storage.get_latest_snapshot_all_positions(user_id=uid)
         pie = calc_position_allocation(latest_all)
 
         # 累计已实现盈亏：组合视角=全部 SUCCESS 卖出求和；单持仓视角=该基金 SUCCESS 卖出求和
         if is_portfolio_mode:
-            realized_profit_total = _seller_storage.get_realized_profit_total()
+            realized_profit_total = _seller_storage.get_realized_profit_total(user_id=uid)
         else:
-            # 单持仓模式：取出该持仓的 fund_code 后按基金过滤
-            pos = _position_storage.get_position_by_id(position_id)
+            # 单持仓模式：取出该持仓的 fund_code 后按基金过滤（get_position_by_id 也带 user_id 防越权）
+            pos = _position_storage.get_position_by_id(position_id, user_id=uid)
             realized_profit_total = _seller_storage.get_realized_profit_total(
-                fund_code=pos['fund_code'] if pos else None
+                user_id=uid, fund_code=pos['fund_code'] if pos else None
             )
 
         return jsonify({
@@ -2700,14 +2703,17 @@ def get_position_snapshot_cost_index():
     try:
         start_date = request.args.get('start_date', '') or None
         end_date = request.args.get('end_date', '') or None
+        # multi-user 隔离：别人持仓即使知道 position_id 也拿不到
+        uid = _current_user_id()
 
-        pos = _position_storage.get_position_by_id(position_id)
+        pos = _position_storage.get_position_by_id(position_id, user_id=uid)
         if not pos:
             return jsonify({'error': '持仓不存在'}), 404
 
         index_code = pos.get('index_code')
         snapshots = _position_snapshot_storage.get_position_snapshot_series(
-            position_id=position_id, start_date=start_date, end_date=end_date
+            position_id=position_id, user_id=uid,
+            start_date=start_date, end_date=end_date
         )
         # 过滤非交易日快照点（与持仓分析三图一致，避免周末/节假日平段）
         trading_dates = _nav_storage.get_trading_dates(start_date, end_date)

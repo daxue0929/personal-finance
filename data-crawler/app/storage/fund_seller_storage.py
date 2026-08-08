@@ -487,9 +487,11 @@ class FundSellerStorage(StorageBase):
         finally:
             session.close()
 
-    def get_realized_profit_total(self, fund_code: Optional[str] = None) -> float:
+    def get_realized_profit_total(self, user_id: Optional[int] = None,
+                                  fund_code: Optional[str] = None) -> float:
         """
         获取累计已实现盈亏
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         :param fund_code: 指定基金代码时只统计该基金（单持仓视角）；None 为全部卖出汇总（组合视角）
         :return: SUM(realized_profit)，无数据返回 0.0
         """
@@ -499,6 +501,8 @@ class FundSellerStorage(StorageBase):
                 FundSeller.del_flag == '1',
                 FundSeller.sell_status == 'SUCCESS'
             )
+            if user_id is not None:
+                query = query.filter(FundSeller.user_id == user_id)
             if fund_code:
                 query = query.filter(FundSeller.fund_code == fund_code)
             total = query.scalar()

@@ -74,24 +74,29 @@ class PositionDailySnapshotStorage(StorageBase):
     def get_session(self):
         return self.Session()
 
-    def get_position_options(self) -> List[Dict[str, Any]]:
+    def get_position_options(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取有快照数据的可选持仓列表（供分析页下拉）。
 
         返回快照表中出现过的 distinct (position_id, fund_code, fund_name)，
         并 outerjoin position 表补 index_code（关联指数，供「指数分析」跳转）。
         按 position_id 升序。无数据返回空列表。
+
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         """
         from .position_storage import Position
         session = self.get_session()
         try:
-            rows = session.query(
+            query = session.query(
                 PositionDailySnapshot.position_id,
                 PositionDailySnapshot.fund_code,
                 PositionDailySnapshot.fund_name,
                 Position.index_code
             ).outerjoin(
                 Position, Position.id == PositionDailySnapshot.position_id
-            ).distinct().order_by(PositionDailySnapshot.position_id.asc()).all()
+            )
+            if user_id is not None:
+                query = query.filter(PositionDailySnapshot.user_id == user_id)
+            rows = query.distinct().order_by(PositionDailySnapshot.position_id.asc()).all()
             return [{
                 'position_id': r[0],
                 'fund_code': r[1],
@@ -102,11 +107,13 @@ class PositionDailySnapshotStorage(StorageBase):
             session.close()
 
     def get_position_snapshot_series(self, position_id: int,
+                                     user_id: Optional[int] = None,
                                      start_date: Optional[str] = None,
                                      end_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """获取单持仓的快照序列（按日期升序），供持仓分析。
 
         :param position_id: 持仓ID
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         :param start_date: 起始日期（YYYY-MM-DD，可选）
         :param end_date: 结束日期（YYYY-MM-DD，可选）
         :return: 快照字典列表（升序）
@@ -115,6 +122,8 @@ class PositionDailySnapshotStorage(StorageBase):
         try:
             query = session.query(PositionDailySnapshot) \
                 .filter(PositionDailySnapshot.position_id == position_id)
+            if user_id is not None:
+                query = query.filter(PositionDailySnapshot.user_id == user_id)
             if start_date:
                 query = query.filter(PositionDailySnapshot.snapshot_date >= start_date)
             if end_date:
@@ -124,25 +133,30 @@ class PositionDailySnapshotStorage(StorageBase):
         finally:
             session.close()
 
-    def get_latest_snapshot_all_positions(self) -> List[Dict[str, Any]]:
+    def get_latest_snapshot_all_positions(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取最新快照日的全部持仓快照（供持仓占比饼图）。
 
         取 position_daily_snapshot 中最大 snapshot_date 当天的所有记录。
         无数据返回空列表。
+
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         """
         session = self.get_session()
         try:
             latest_date = session.query(func.max(PositionDailySnapshot.snapshot_date)).scalar()
             if not latest_date:
                 return []
-            items = session.query(PositionDailySnapshot) \
-                .filter(PositionDailySnapshot.snapshot_date == latest_date) \
-                .all()
+            query = session.query(PositionDailySnapshot) \
+                .filter(PositionDailySnapshot.snapshot_date == latest_date)
+            if user_id is not None:
+                query = query.filter(PositionDailySnapshot.user_id == user_id)
+            items = query.all()
             return [_to_dict(i) for i in items]
         finally:
             session.close()
 
-    def get_portfolio_snapshot_series(self, start_date: Optional[str] = None,
+    def get_portfolio_snapshot_series(self, user_id: Optional[int] = None,
+                                      start_date: Optional[str] = None,
                                       end_date: Optional[str] = None) -> List[Dict[str, Any]]:
         """获取组合级每日聚合快照序列（按 snapshot_date 升序），供累计收益图。
 
@@ -150,6 +164,7 @@ class PositionDailySnapshotStorage(StorageBase):
         盈亏率 = SUM(profit_loss)/SUM(cost_amount)×100（未舍入中间值再 round）。
         与单持仓序列口径一致，便于前端单持仓/组合视角切换复用同一渲染逻辑。
 
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         :param start_date: 起始日期（YYYY-MM-DD，可选）
         :param end_date: 结束日期（YYYY-MM-DD，可选）
         :return: 每日聚合字典列表（升序），每项含
@@ -162,7 +177,10 @@ class PositionDailySnapshotStorage(StorageBase):
                 func.sum(PositionDailySnapshot.current_value).label('current_value'),
                 func.sum(PositionDailySnapshot.cost_amount).label('cost_amount'),
                 func.sum(PositionDailySnapshot.profit_loss).label('profit_loss'),
-            ).group_by(PositionDailySnapshot.snapshot_date)
+            )
+            if user_id is not None:
+                query = query.filter(PositionDailySnapshot.user_id == user_id)
+            query = query.group_by(PositionDailySnapshot.snapshot_date)
             if start_date:
                 query = query.filter(PositionDailySnapshot.snapshot_date >= start_date)
             if end_date:

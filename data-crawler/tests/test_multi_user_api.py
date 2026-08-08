@@ -241,3 +241,136 @@ def test_admin_sees_all_users_data(client, api, admin_user, login, business_stor
     assert resp.status_code == 200
     kwargs = business_storages_mock['_position_storage'].get_positions_with_pagination.call_args.kwargs
     assert kwargs['user_id'] is None
+
+
+# ==================== AC-6+: 持仓分析（snapshot）路由 user_id 过滤 ====================
+# 修复 issue: 之前 multi-user 改动只覆盖了 *_with_pagination，
+# 持仓分析（snapshot）专用方法没加 user_id，导致分析页跨 user 可见。
+# 详见 bug: "持仓分析还是可以看到（多用户隔离）"
+
+
+def test_snapshot_options_route_passes_user_id(
+    client, api, normal_user, login, business_storages_mock,
+):
+    """GET /api/positions/snapshot/options 应把当前 user.id 透传给 storage"""
+    login(client, normal_user)
+    business_storages_mock['_position_snapshot_storage'].get_position_options.return_value = []
+    resp = client.get('/api/positions/snapshot/options')
+    assert resp.status_code == 200
+    kwargs = business_storages_mock[
+        '_position_snapshot_storage'
+    ].get_position_options.call_args.kwargs
+    assert kwargs['user_id'] == normal_user['id']
+
+
+def test_snapshot_analysis_route_passes_user_id(
+    client, api, normal_user, login, business_storages_mock,
+):
+    """GET /api/positions/snapshot/analysis 应把所有 storage 调用都打 user_id
+
+    覆盖 4 个 storage 调用：portfolio_series / position_series / latest_all /
+    realized_profit_total。任意一个漏 user_id 都会让别的 user 数据泄漏。
+    """
+    login(client, normal_user)
+    snaps = business_storages_mock['_position_snapshot_storage']
+    seller = business_storages_mock['_seller_storage']
+    nav = business_storages_mock['_nav_storage']
+    snaps.get_portfolio_snapshot_series.return_value = []
+    snaps.get_position_snapshot_series.return_value = []
+    snaps.get_latest_snapshot_all_positions.return_value = []
+    nav.get_trading_dates.return_value = []
+    seller.get_realized_profit_total.return_value = 0.0
+
+    resp = client.get('/api/positions/snapshot/analysis?position_id=all')
+    assert resp.status_code == 200, resp.get_json()
+
+    # 4 个 storage 调用都应收到 user_id
+    ps = snaps.get_portfolio_snapshot_series.call_args.kwargs
+    assert ps['user_id'] == normal_user['id'], f'portfolio_series kwargs={ps}'
+
+    # position_id=all 不会调 get_position_snapshot_series，只检查 realized_profit
+    rp = seller.get_realized_profit_total.call_args.kwargs
+    assert rp['user_id'] == normal_user['id'], f'realized_profit kwargs={rp}'
+
+    latest = snaps.get_latest_snapshot_all_positions.call_args.kwargs
+    assert latest['user_id'] == normal_user['id'], f'latest_all kwargs={latest}'
+
+
+def test_snapshot_analysis_position_mode_passes_user_id(
+    client, api, normal_user, login, business_storages_mock,
+):
+    """分析页选单持仓（position_id 数字）时，position_storage.get_position_by_id
+    和 snapshot get_position_snapshot_series 也应带 user_id（防越权）"""
+    login(client, normal_user)
+    snaps = business_storages_mock['_position_snapshot_storage']
+    pos = business_storages_mock['_position_storage']
+    seller = business_storages_mock['_seller_storage']
+    nav = business_storages_mock['_nav_storage']
+    snaps.get_portfolio_snapshot_series.return_value = []
+    snaps.get_position_snapshot_series.return_value = []
+    snaps.get_latest_snapshot_all_positions.return_value = []
+    pos.get_position_by_id.return_value = {'fund_code': '000001', 'index_code': None}
+    nav.get_trading_dates.return_value = []
+    seller.get_realized_profit_total.return_value = 0.0
+
+    resp = client.get('/api/positions/snapshot/analysis?position_id=42')
+    assert resp.status_code == 200, resp.get_json()
+
+    # 4 个 storage 调用
+    pos_kwargs = pos.get_position_by_id.call_args.kwargs
+    assert pos_kwargs.get('user_id') == normal_user['id'], f'get_position_by_id kwargs={pos_kwargs}'
+
+    series_kwargs = snaps.get_position_snapshot_series.call_args.kwargs
+    assert series_kwargs['user_id'] == normal_user['id'], f'position series kwargs={series_kwargs}'
+
+    rp_kwargs = seller.get_realized_profit_total.call_args.kwargs
+    assert rp_kwargs['user_id'] == normal_user['id'], f'realized_profit kwargs={rp_kwargs}'
+
+
+def test_snapshot_cost_index_route_passes_user_id(
+    client, api, normal_user, login, business_storages_mock,
+):
+    """GET /api/positions/snapshot/cost-index 应在 get_position_by_id 和
+    get_position_snapshot_series 上都传 user_id（防别人持仓可被任意查询）"""
+    login(client, normal_user)
+    pos = business_storages_mock['_position_storage']
+    snaps = business_storages_mock['_position_snapshot_storage']
+    nav = business_storages_mock['_nav_storage']
+    pos.get_position_by_id.return_value = {'fund_code': '000001', 'index_code': None}
+    snaps.get_position_snapshot_series.return_value = []
+    nav.get_trading_dates.return_value = []
+
+    resp = client.get('/api/positions/snapshot/cost-index?position_id=42')
+    assert resp.status_code == 200, resp.get_json()
+
+    pos_kwargs = pos.get_position_by_id.call_args.kwargs
+    assert pos_kwargs.get('user_id') == normal_user['id'], f'get_position_by_id kwargs={pos_kwargs}'
+
+    series_kwargs = snaps.get_position_snapshot_series.call_args.kwargs
+    assert series_kwargs['user_id'] == normal_user['id'], f'snapshot series kwargs={series_kwargs}'
+
+
+def test_snapshot_admin_no_user_id(
+    client, api, admin_user, login, business_storages_mock,
+):
+    """admin 不切换视角时，snapshot 路由的 user_id 应为 None（看所有 user）"""
+    login(client, admin_user)
+    snaps = business_storages_mock['_position_snapshot_storage']
+    seller = business_storages_mock['_seller_storage']
+    pos = business_storages_mock['_position_storage']
+    nav = business_storages_mock['_nav_storage']
+    snaps.get_position_options.return_value = []
+    snaps.get_portfolio_snapshot_series.return_value = []
+    snaps.get_position_snapshot_series.return_value = []
+    snaps.get_latest_snapshot_all_positions.return_value = []
+    pos.get_position_by_id.return_value = None  # cost-index 会 404
+    nav.get_trading_dates.return_value = []
+    seller.get_realized_profit_total.return_value = 0.0
+
+    client.get('/api/positions/snapshot/options')
+    assert snaps.get_position_options.call_args.kwargs['user_id'] is None
+
+    client.get('/api/positions/snapshot/analysis?position_id=all')
+    assert snaps.get_portfolio_snapshot_series.call_args.kwargs['user_id'] is None
+    assert snaps.get_latest_snapshot_all_positions.call_args.kwargs['user_id'] is None
+    assert seller.get_realized_profit_total.call_args.kwargs['user_id'] is None
