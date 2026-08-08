@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS `fund_dip_plan`;
 
 CREATE TABLE `fund_dip_plan` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '定投计划ID（主键，自增）',
+  `user_id` bigint NOT NULL DEFAULT '1' COMMENT '所属 user（多用户隔离）',
   `fund_code` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '基金代码',
   `fund_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT '' COMMENT '基金名称（冗余）',
   `enable_dip` char(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT '1' COMMENT '是否启用定投（1启用 0停用）',
@@ -30,7 +31,8 @@ CREATE TABLE `fund_dip_plan` (
   KEY `idx_fund_code` (`fund_code`) USING BTREE COMMENT '基金代码索引',
   KEY `idx_del_flag` (`del_flag`) COMMENT '删除标志索引',
   KEY `idx_fund_code_del` (`fund_code`,`del_flag`) COMMENT '基金代码+删除标志复合索引',
-  KEY `idx_enable_dip` (`enable_dip`,`del_flag`) COMMENT '启用+删除标志复合索引（任务扫描用）'
+  KEY `idx_enable_dip` (`enable_dip`,`del_flag`) COMMENT '启用+删除标志复合索引（任务扫描用）',
+  KEY `idx_user_id` (`user_id`) COMMENT 'user 索引（多用户隔离）'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC COMMENT='基金定投计划表';
 
 -- ================================================

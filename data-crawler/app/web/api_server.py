@@ -9,7 +9,7 @@ import os
 from sqlalchemy import text
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
-from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage, IndexBasicStorage
+from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage, IndexBasicStorage, InviteCodeStorage
 from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series, filter_trading_days
 from ..utils.datetime_utils import get_beijing_now
 from . import scheduler_proxy
@@ -30,6 +30,7 @@ _index_basic_storage = IndexBasicStorage()
 _position_snapshot_storage = PositionDailySnapshotStorage()
 _dip_plan_storage = FundDipPlanStorage()
 _run_record_storage = TaskRunRecordStorage()
+_invite_code_storage = InviteCodeStorage()
 
 # 会话签名密钥（登录态 Cookie 鉴权依赖）。生产环境必须在 .env 设置 SECRET_KEY
 app.secret_key = os.getenv('SECRET_KEY')
@@ -133,12 +134,46 @@ def generate_trace_id():
 # ==================== 鉴权与用户管理 ====================
 
 # 无需登录即可访问的路径
-_PUBLIC_PATHS = {'/api/login'}
+_PUBLIC_PATHS = {'/api/login', '/api/signup'}
 
 
 def _is_admin(user):
     """判断是否管理员"""
     return bool(user and user.get('role') == 'admin')
+
+
+def _current_user_id():
+    """返回当前请求应当使用的 user_id。
+
+    - 普通 user / admin 不切换：g.user['id']
+    - admin 切换视角（session 写入 impersonate_user_id）：target user id
+    - admin 不切换：None（表示看所有用户数据）
+    """
+    user = getattr(g, 'user', None)
+    if not user:
+        return None
+    impersonate_id = session.get('impersonate_user_id')
+    if _is_admin(user) and impersonate_id is not None:
+        return int(impersonate_id)
+    # admin 不切换时返 None（不过滤），普通 user 始终返自己 id
+    if _is_admin(user):
+        return None
+    return user['id']
+
+
+def _current_user_id_strict():
+    """admin 切换视角时返 target id，否则返 g.user['id']。不存在返 None。
+
+    与 _current_user_id 区别：永不返 None（除非未登录），用于必须有 user 的场景
+    （如创建资产时记录归属）。
+    """
+    user = getattr(g, 'user', None)
+    if not user:
+        return None
+    impersonate_id = session.get('impersonate_user_id')
+    if _is_admin(user) and impersonate_id is not None:
+        return int(impersonate_id)
+    return user['id']
 
 
 def admin_required(func):
@@ -178,6 +213,15 @@ def require_auth():
         return jsonify({'error': '未登录或登录已过期'}), 401
 
     g.user = user
+
+    # admin 切换视角：用 target user 覆盖 g.user，便于业务路由通过 g.user 拿到目标身份
+    impersonate_id = session.get('impersonate_user_id')
+    if _is_admin(user) and impersonate_id is not None:
+        target = _user_storage.get_user_by_id(impersonate_id)
+        if target and target.get('enabled'):
+            g.user = target
+            g.impersonated_by = user_id  # 真实 admin id，供审计/记录
+
     return None
 
 
@@ -224,6 +268,121 @@ def logout():
 def get_me():
     """获取当前登录用户信息"""
     return jsonify({'user': getattr(g, 'user', None)}), 200
+
+
+@app.route('/api/me', methods=['PUT'])
+@log_request
+def update_me():
+    """更新当前登录用户信息（仅 display_name / password / remark；不可改 role/enabled）"""
+    current = getattr(g, 'user', None)
+    if not current:
+        return jsonify({'error': '未登录'}), 401
+    data = request.get_json(silent=True) or {}
+    # 提权防护：丢弃 role / enabled / id 字段
+    safe_data = {k: v for k, v in data.items() if k in ('display_name', 'password', 'remark')}
+    if not safe_data:
+        return jsonify({'error': '无可更新字段（仅 display_name/password/remark 可改）'}), 400
+    try:
+        ok = _user_storage.update_user(current['id'], safe_data)
+        if not ok:
+            return jsonify({'error': '用户不存在'}), 404
+        return jsonify({'success': True, 'message': '已更新'}), 200
+    except Exception as e:
+        logger.error(f"更新自我信息失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/signup', methods=['POST'])
+@log_request
+def signup():
+    """公开端点：通过邀请码注册新 user（PRD AC-3）"""
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    display_name = (data.get('display_name') or '').strip()
+    invite_code = (data.get('invite_code') or '').strip()
+    if not username or not password or not invite_code:
+        return jsonify({'error': '用户名、密码、邀请码为必填项'}), 400
+    try:
+        from ..task.register_user_via_invite import register_user_via_invite
+        new_user = register_user_via_invite(
+            username=username, password=password,
+            display_name=display_name, invite_code=invite_code,
+        )
+        return jsonify({'success': True, 'message': '注册成功', 'user': new_user}), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"注册失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/invite-codes', methods=['GET'])
+@log_request
+@admin_required
+def list_invite_codes():
+    """admin 列出自己生成的邀请码（分页）"""
+    current = getattr(g, 'user', None)
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+        include_used = request.args.get('include_used', 'true').lower() != 'false'
+        items, total = _invite_code_storage.list_by_admin(
+            admin_id=current['id'], include_used=include_used, page=page, page_size=page_size
+        )
+        return jsonify({'data': items, 'total': total, 'page': page, 'page_size': page_size}), 200
+    except Exception as e:
+        logger.error(f"获取邀请码列表失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/invite-codes', methods=['POST'])
+@log_request
+@admin_required
+def create_invite_code():
+    """admin 生成新邀请码（默认 7 天有效）"""
+    current = getattr(g, 'user', None)
+    data = request.get_json(silent=True) or {}
+    ttl_days = int(data.get('ttl_days') or 7)
+    if ttl_days < 1 or ttl_days > 365:
+        return jsonify({'error': 'ttl_days 应在 1~365 之间'}), 400
+    try:
+        code = _invite_code_storage.create(admin_id=current['id'], ttl_days=ttl_days)
+        return jsonify({'success': True, 'code': code, 'ttl_days': ttl_days}), 201
+    except Exception as e:
+        logger.error(f"生成邀请码失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/impersonate', methods=['POST'])
+@log_request
+@admin_required
+def start_impersonate():
+    """admin 切换到 target user 视角（session 写入 impersonate_user_id）"""
+    data = request.get_json(silent=True) or {}
+    target_id = data.get('user_id')
+    if not target_id:
+        return jsonify({'error': '缺少 user_id'}), 400
+    target = _user_storage.get_user_by_id(int(target_id))
+    if not target or not target.get('enabled'):
+        return jsonify({'error': '目标用户不存在或已禁用'}), 404
+    current = getattr(g, 'user', None)
+    if target['id'] == current['id']:
+        return jsonify({'error': '无需切换到自身'}), 400
+    session['impersonate_user_id'] = target['id']
+    logger.info(f"admin {current['username']} 开始切换到 user_id={target['id']} 视角")
+    return jsonify({'success': True, 'message': f"已切换到 {target['username']} 视角", 'target': target}), 200
+
+
+@app.route('/api/admin/impersonate', methods=['DELETE'])
+@log_request
+@admin_required
+def stop_impersonate():
+    """admin 退出切换视角"""
+    current = getattr(g, 'user', None)
+    session.pop('impersonate_user_id', None)
+    logger.info(f"admin {current['username'] if current else '?'} 退出视角切换")
+    return jsonify({'success': True, 'message': '已退出视角切换'}), 200
 
 
 @app.route('/api/users', methods=['GET'])
@@ -1057,6 +1216,7 @@ def get_buyers():
         
         # 使用存储类方法获取数据（确保使用pool_pre_ping配置）
         buyers, total = _buyer_storage.get_buyers_with_pagination(
+            user_id=_current_user_id(),
             fund_code=fund_code if fund_code else None,
             fund_name=fund_name if fund_name else None,
             buy_type=buy_type if buy_type else None,
@@ -1391,8 +1551,8 @@ def quick_buy():
                     return jsonify({'error': '涨跌幅策略需要传入涨跌幅参数'}), 400
                     
                 result = session.execute(
-                    text("CALL sp_insert_fund_buyer_by_change(:fund_code, :change_pct)"),
-                    {'fund_code': fund_code, 'change_pct': change_pct}
+                    text("CALL sp_insert_fund_buyer_by_change(:user_id, :fund_code, :change_pct)"),
+                    {'user_id': g.user['id'], 'fund_code': fund_code, 'change_pct': change_pct}
                 )
                 session.commit()
                 
@@ -1444,6 +1604,7 @@ def get_sellers():
 
         # 使用存储类方法获取数据
         sellers, total = _seller_storage.get_sellers_with_pagination(
+            user_id=_current_user_id(),
             fund_code=fund_code if fund_code else None,
             fund_name=fund_name if fund_name else None,
             sell_type=sell_type if sell_type else None,
@@ -1765,6 +1926,7 @@ def get_portfolios():
         page_size = int(request.args.get('page_size', 10))
         
         portfolios, total = _portfolio_storage.get_portfolios_with_pagination(
+            user_id=_current_user_id(),
             name=name,
             page=page,
             page_size=page_size
@@ -1958,6 +2120,7 @@ def get_positions():
         page_size = int(request.args.get('page_size', 10))
         
         positions, total = _position_storage.get_positions_with_pagination(
+            user_id=_current_user_id(),
             fund_code=fund_code,
             fund_name=fund_name,
             page=page,
@@ -2581,6 +2744,7 @@ def get_position_snapshots():
         end_date = request.args.get('end_date', '')
 
         data, total = _position_snapshot_storage.get_snapshots_with_pagination(
+            user_id=_current_user_id(),
             position_id=int(position_id) if position_id else None,
             fund_code=fund_code if fund_code else None,
             start_date=start_date if start_date else None,

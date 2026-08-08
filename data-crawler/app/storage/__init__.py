@@ -13,6 +13,7 @@ from .position_daily_snapshot_storage import PositionDailySnapshot, PositionDail
 from .fund_dip_plan_storage import FundDipPlan, FundDipPlanStorage
 from .task_run_record_storage import TaskRunRecord, TaskRunRecordStorage
 from .index_basic_storage import IndexBasic, IndexBasicStorage
+from .invite_code_storage import InviteCode, InviteCodeStorage
 
 __all__ = [
     'FundInfo', 'FundInfoStorage',
@@ -30,4 +31,5 @@ __all__ = [
     'FundDipPlan', 'FundDipPlanStorage',
     'TaskRunRecord', 'TaskRunRecordStorage',
     'IndexBasic', 'IndexBasicStorage',
+    'InviteCode', 'InviteCodeStorage',
 ]

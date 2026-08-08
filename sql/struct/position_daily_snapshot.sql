@@ -25,12 +25,14 @@ CREATE TABLE `position_daily_snapshot` (
   `profit_loss` decimal(15,2) DEFAULT '0.00' COMMENT '盈亏 = 市值 - 成本金额',
   `profit_loss_rate` decimal(6,2) DEFAULT '0.00' COMMENT '盈亏比例（%）= 盈亏 / 成本金额 × 100',
   `source` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'manual' COMMENT '数据来源（manual手动/system系统备份）',
+  `user_id` bigint NOT NULL DEFAULT '1' COMMENT '所属 user（multi-user 隔离，从 position 携带）',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `idx_position_date` (`position_id`,`snapshot_date`) USING BTREE COMMENT '持仓ID+快照日期唯一索引',
   KEY `idx_position_id` (`position_id`) USING BTREE COMMENT '持仓ID索引',
   KEY `idx_snapshot_date` (`snapshot_date`) USING BTREE COMMENT '快照日期索引',
   KEY `idx_fund_code` (`fund_code`) USING BTREE COMMENT '基金代码索引',
+  KEY `idx_user_id` (`user_id`) USING BTREE COMMENT 'user 索引（multi-user 隔离）',
   KEY `idx_create_time` (`create_time`) COMMENT '创建时间索引'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC COMMENT='持仓每日快照表';
 

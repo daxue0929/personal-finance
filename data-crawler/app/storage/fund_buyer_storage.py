@@ -87,6 +87,7 @@ class FundBuyer(Base):
     __tablename__ = 'fund_buyer'
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, default=1, index=True, comment='所属 user（multi-user 隔离）')
     fund_code = Column(String(10), nullable=False)
     fund_name = Column(String(64), default='')
     time = Column(Date, nullable=False, default=datetime.now().date())
@@ -373,11 +374,12 @@ class FundBuyerStorage(StorageBase):
         finally:
             session.close()
 
-    def get_buyers_with_pagination(self, fund_code=None, fund_name=None, buy_type=None, 
+    def get_buyers_with_pagination(self, user_id=None, fund_code=None, fund_name=None, buy_type=None,
                                    buy_status=None, start_time=None, end_time=None,
                                    sort_field=None, sort_order=None, page=1, page_size=10):
         """
         获取买入记录列表（支持搜索、排序和分页）
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         :param fund_code: 基金代码（模糊搜索）
         :param fund_name: 基金名称（模糊搜索）
         :param buy_type: 买入类型
@@ -393,6 +395,9 @@ class FundBuyerStorage(StorageBase):
         session = self.get_session()
         try:
             query = session.query(FundBuyer).filter(FundBuyer.del_flag == '1')
+
+            if user_id is not None:
+                query = query.filter(FundBuyer.user_id == user_id)
             
             # 添加搜索条件
             if fund_code:

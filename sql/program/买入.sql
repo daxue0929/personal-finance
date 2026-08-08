@@ -10,6 +10,7 @@ DELIMITER $$
 DROP PROCEDURE IF EXISTS `sp_insert_fund_buyer_by_change`$$
 
 CREATE PROCEDURE `sp_insert_fund_buyer_by_change`(
+    IN p_user_id BIGINT,             -- 所属 user（multi-user 隔离；API 层强传 g.user.id）
     IN p_fund_code VARCHAR(10),      -- 基金代码
     IN p_change_percent DECIMAL(6,2)  -- 涨跌幅，单位%，例如 1.5 表示 +1.5%，-2.3 表示 -2.3%
 )
@@ -112,7 +113,8 @@ BEGIN
         `update_by`,
         `update_time`,
         `remark`,
-        `buy_status`
+        `buy_status`,
+        `user_id`
     ) VALUES (
         v_fund_code,                   -- 使用从 fund_info 获取的真实基金代码
         v_fund_name,
@@ -126,14 +128,16 @@ BEGIN
         'daxue',                       -- 更新者
         NOW(),                          -- 更新时间（已设置时区为上海时间）
         CONCAT('涨跌幅=', v_change, '%, 系数=', v_coefficient),
-        'PENDING'
+        'PENDING',
+        p_user_id                       -- multi-user 隔离
     ) ON DUPLICATE KEY UPDATE
         `amt` = VALUES(`amt`),
         `del_flag` = '1',
         `update_by` = VALUES(`update_by`),
         `update_time` = VALUES(`update_time`),
         `remark` = VALUES(`remark`),
-        `buy_status` = VALUES(`buy_status`);
+        `buy_status` = VALUES(`buy_status`),
+        `user_id` = VALUES(`user_id`);
 
     -- 8. 输出买入结果
     SELECT

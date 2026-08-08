@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS `fund_buyer`;
 
 CREATE TABLE `fund_buyer` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '买入流水号标识（主键，自增）',
+  `user_id` bigint NOT NULL DEFAULT '1' COMMENT '所属 user（多用户隔离）',
   `fund_code` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '基金代码',
   `fund_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT '' COMMENT '基金名称',
   `time` date NOT NULL DEFAULT (curdate()) COMMENT '买入日期',
@@ -34,7 +35,8 @@ CREATE TABLE `fund_buyer` (
   KEY `idx_time` (`time`) COMMENT '买入日期索引',
   KEY `idx_buy_status` (`buy_status`) COMMENT '买入状态索引',
   KEY `idx_time_status` (`time`,`buy_status`) COMMENT '买入日期+买入状态复合索引',
-  KEY `idx_fund_time_status_del` (`fund_code`,`time`,`buy_status`,`del_flag`) COMMENT '基金代码+买入日期+买入状态+删除标志复合索引'
+  KEY `idx_fund_time_status_del` (`fund_code`,`time`,`buy_status`,`del_flag`) COMMENT '基金代码+买入日期+买入状态+删除标志复合索引',
+  KEY `idx_user_id` (`user_id`) COMMENT 'user 索引（多用户隔离）'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC COMMENT='基金买入流水表';
 
 -- ================================================

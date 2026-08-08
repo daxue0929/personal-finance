@@ -23,6 +23,7 @@ class FundDipPlan(Base):
     __tablename__ = 'fund_dip_plan'
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, default=1, index=True, comment='所属 user（multi-user 隔离）')
     fund_code = Column(String(10), nullable=False)
     fund_name = Column(String(64), default='')
     enable_dip = Column(CHAR(1), default='1')
@@ -66,14 +67,19 @@ class FundDipPlanStorage(StorageBase):
             'update_time': str(plan.update_time) if plan.update_time else None,
         }
 
-    def get_plans_by_fund_code(self, fund_code: str) -> List[Dict[str, Any]]:
-        """获取指定基金的所有定投计划（含已停用，供前端管理）"""
+    def get_plans_by_fund_code(self, fund_code: str, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """获取指定基金的所有定投计划（含已停用，供前端管理）
+        :param user_id: 限定 user；None = 不过滤
+        """
         session = self.get_session()
         try:
-            plans = session.query(FundDipPlan).filter(
+            query = session.query(FundDipPlan).filter(
                 FundDipPlan.fund_code == fund_code,
                 FundDipPlan.del_flag == '1'
-            ).order_by(FundDipPlan.id.asc()).all()
+            )
+            if user_id is not None:
+                query = query.filter(FundDipPlan.user_id == user_id)
+            plans = query.order_by(FundDipPlan.id.asc()).all()
             return [self._to_dict(p) for p in plans]
         except Exception as e:
             logger.error(f"获取基金 {fund_code} 定投计划失败: {e}")
@@ -81,14 +87,19 @@ class FundDipPlanStorage(StorageBase):
         finally:
             session.close()
 
-    def get_enabled_plans(self) -> List[Dict[str, Any]]:
-        """获取所有启用中的定投计划（净值更新任务扫描用）"""
+    def get_enabled_plans(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """获取所有启用中的定投计划（净值更新任务扫描用）
+        :param user_id: 限定 user；None = 不过滤（admin/scheduler 跨用户视角）
+        """
         session = self.get_session()
         try:
-            plans = session.query(FundDipPlan).filter(
+            query = session.query(FundDipPlan).filter(
                 FundDipPlan.enable_dip == '1',
                 FundDipPlan.del_flag == '1'
-            ).all()
+            )
+            if user_id is not None:
+                query = query.filter(FundDipPlan.user_id == user_id)
+            plans = query.all()
             return [self._to_dict(p) for p in plans]
         except Exception as e:
             logger.error(f"获取启用定投计划失败: {e}")

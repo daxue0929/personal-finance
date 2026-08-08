@@ -17,9 +17,12 @@ DROP PROCEDURE IF EXISTS `backup_position_daily_snapshot`$$
 
 CREATE PROCEDURE `backup_position_daily_snapshot`()
 BEGIN
+    -- DECLARE 必须放在 BEGIN 后的最前面（在 SET 之前），否则 MySQL 报语法错误
+    DECLARE yesterday_date DATE;
+
+    -- 设置会话时间区为上海时间
     SET SESSION time_zone = 'Asia/Shanghai';
 
-    DECLARE yesterday_date DATE;
     SET yesterday_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY);
 
     -- 删除昨天已存在的快照（允许重复执行）
@@ -40,6 +43,7 @@ BEGIN
         profit_loss,
         profit_loss_rate,
         source,
+        user_id,
         create_time
     )
     SELECT
@@ -60,6 +64,7 @@ BEGIN
             ELSE 0
         END                                             AS profit_loss_rate,
         'system',
+        p.user_id                                       AS user_id,  -- multi-user 隔离（从 position 携带）
         NOW()
     FROM position p
     LEFT JOIN fund_info fi ON fi.fund_code = p.fund_code AND fi.del_flag = '1'

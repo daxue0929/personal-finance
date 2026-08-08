@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS `portfolio`;
 
 CREATE TABLE `portfolio` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '组合ID（主键，自增）',
+  `user_id` bigint NOT NULL DEFAULT '1' COMMENT '所属 user（多用户隔离）',
   `name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '组合名称',
   `description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT '' COMMENT '组合描述',
   `total_value` decimal(15,2) DEFAULT '0.00' COMMENT '组合总市值',
@@ -25,7 +26,8 @@ CREATE TABLE `portfolio` (
   PRIMARY KEY (`id`) USING BTREE,
   KEY `idx_del_flag` (`del_flag`) COMMENT '删除标志索引',
   KEY `idx_name_del` (`name`,`del_flag`) COMMENT '组合名称+删除标志复合索引',
-  KEY `idx_create_time` (`create_time`) COMMENT '创建时间索引'
+  KEY `idx_create_time` (`create_time`) COMMENT '创建时间索引',
+  KEY `idx_user_id` (`user_id`) COMMENT 'user 索引（多用户隔离）'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC COMMENT='持仓组合表';
 
 -- ================================================

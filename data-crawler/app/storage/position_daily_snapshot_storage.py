@@ -28,6 +28,7 @@ class PositionDailySnapshot(Base):
     __tablename__ = 'position_daily_snapshot'
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, default=1, index=True, comment='所属 user（multi-user 隔离，从 position 携带）')
     position_id = Column(BigInteger, nullable=False, comment='持仓ID')
     snapshot_date = Column(Date, nullable=False, comment='快照日期')
     fund_code = Column(String(10), nullable=False, comment='基金代码')
@@ -185,13 +186,17 @@ class PositionDailySnapshotStorage(StorageBase):
         finally:
             session.close()
 
-    def get_snapshots_with_pagination(self, position_id=None, fund_code=None,
+    def get_snapshots_with_pagination(self, user_id=None, position_id=None, fund_code=None,
                                       start_date=None, end_date=None,
                                       page=1, page_size=10):
-        """分页查询快照列表（供管理/调试）"""
+        """分页查询快照列表（供管理/调试）
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
+        """
         session = self.get_session()
         try:
             query = session.query(PositionDailySnapshot)
+            if user_id is not None:
+                query = query.filter(PositionDailySnapshot.user_id == user_id)
             if position_id is not None:
                 query = query.filter(PositionDailySnapshot.position_id == position_id)
             if fund_code:

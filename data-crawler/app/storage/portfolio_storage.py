@@ -23,6 +23,7 @@ class Portfolio(Base):
     __tablename__ = 'portfolio'
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, default=1, index=True, comment='所属 user（multi-user 隔离）')
     name = Column(String(64), nullable=False)
     description = Column(String(500))
     total_value = Column(DECIMAL(15, 2), default=0.00)
@@ -48,9 +49,10 @@ class PortfolioStorage(StorageBase):
         """获取数据库会话"""
         return self.Session()
 
-    def get_portfolios_with_pagination(self, name=None, page=1, page_size=10):
+    def get_portfolios_with_pagination(self, user_id=None, name=None, page=1, page_size=10):
         """
         获取持仓组合列表（支持搜索和分页）
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         :param name: 组合名称（模糊搜索）
         :param page: 页码
         :param page_size: 每页条数
@@ -59,6 +61,9 @@ class PortfolioStorage(StorageBase):
         session = self.get_session()
         try:
             query = session.query(Portfolio).filter(Portfolio.del_flag == '1')
+
+            if user_id is not None:
+                query = query.filter(Portfolio.user_id == user_id)
 
             # 添加搜索条件
             if name:

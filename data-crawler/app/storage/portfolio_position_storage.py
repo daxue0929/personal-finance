@@ -45,6 +45,36 @@ class PortfolioPositionStorage(StorageBase):
         """获取数据库会话"""
         return self.Session()
 
+    def verify_assets_ownership(self, portfolio_id: int, position_id: int, user_id: int) -> bool:
+        """校验 portfolio 和 position 都属于指定 user。
+
+        join 表 portfolio_position 不直接持 user_id，但 add/update/delete 前必须
+        确认 portfolio + position 都属于当前 user，否则会出现 A 用户的持仓被
+        加入 B 用户的组合。
+
+        Returns: True 两边都匹配；False 任一不匹配或不存在
+        """
+        from .portfolio_storage import Portfolio
+        from .position_storage import Position
+        session = self.get_session()
+        try:
+            portfolio = session.query(Portfolio).filter(
+                Portfolio.id == portfolio_id,
+                Portfolio.user_id == user_id,
+                Portfolio.del_flag == '1',
+            ).first()
+            position = session.query(Position).filter(
+                Position.id == position_id,
+                Position.user_id == user_id,
+                Position.del_flag == '1',
+            ).first()
+            return portfolio is not None and position is not None
+        except Exception as e:
+            logger.error(f"校验资产归属失败: portfolio_id={portfolio_id}, position_id={position_id}, user_id={user_id}: {e}")
+            return False
+        finally:
+            session.close()
+
     def get_portfolio_positions(self, portfolio_id: int) -> List[Dict]:
         """获取组合下的所有持仓"""
         session = self.get_session()

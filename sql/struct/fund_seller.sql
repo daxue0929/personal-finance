@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS `fund_seller`;
 
 CREATE TABLE `fund_seller` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '卖出流水号标识（主键，自增）',
+  `user_id` bigint NOT NULL DEFAULT '1' COMMENT '所属 user（多用户隔离）',
   `fund_code` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '基金代码',
   `fund_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT '' COMMENT '基金名称',
   `time` date NOT NULL DEFAULT (curdate()) COMMENT '卖出日期',
@@ -37,7 +38,8 @@ CREATE TABLE `fund_seller` (
   KEY `idx_sell_status` (`sell_status`) COMMENT '卖出状态索引',
   KEY `idx_time_status` (`time`,`sell_status`) COMMENT '卖出日期+卖出状态复合索引',
   KEY `idx_fund_time_status_del` (`fund_code`,`time`,`sell_status`,`del_flag`) COMMENT '基金代码+卖出日期+卖出状态+删除标志复合索引',
-  KEY `idx_status_shares` (`sell_status`,`shares`) COMMENT '卖出状态+份额复合索引（任务用）'
+  KEY `idx_status_shares` (`sell_status`,`shares`) COMMENT '卖出状态+份额复合索引（任务用）',
+  KEY `idx_user_id` (`user_id`) COMMENT 'user 索引（多用户隔离）'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC COMMENT='基金卖出流水表';
 
 -- ================================================

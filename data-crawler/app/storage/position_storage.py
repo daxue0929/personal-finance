@@ -23,6 +23,7 @@ class Position(Base):
     __tablename__ = 'position'
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, default=1, index=True, comment='所属 user（multi-user 隔离）')
     fund_code = Column(String(10), nullable=False)
     fund_name = Column(String(64))
     shares = Column(DECIMAL(15, 4), default=0.0000)
@@ -54,9 +55,10 @@ class PositionStorage(StorageBase):
         """获取数据库会话"""
         return self.Session()
 
-    def get_positions_with_pagination(self, fund_code=None, fund_name=None, page=1, page_size=10):
+    def get_positions_with_pagination(self, user_id=None, fund_code=None, fund_name=None, page=1, page_size=10):
         """
         获取持仓列表（支持搜索和分页）
+        :param user_id: 限定 user；None = 不过滤（admin 跨用户视角）
         :param fund_code: 基金代码（模糊搜索）
         :param fund_name: 基金名称（模糊搜索）
         :param page: 页码
@@ -66,6 +68,9 @@ class PositionStorage(StorageBase):
         session = self.get_session()
         try:
             query = session.query(Position).filter(Position.del_flag == '1')
+
+            if user_id is not None:
+                query = query.filter(Position.user_id == user_id)
             
             # 添加搜索条件
             if fund_code:
