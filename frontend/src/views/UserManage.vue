@@ -1,5 +1,7 @@
 <template>
   <div style="height: 100%; display: flex; flex-direction: column;">
+    <el-tabs v-model="activeTab" style="flex: 1; margin: 0 20px;" type="border-card">
+      <el-tab-pane label="用户管理" name="users" style="height: 100%;">
     <el-card style="flex: 1; margin: 20px; box-shadow: none; border: none; overflow: hidden;" :body-style="{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <!-- 搜索区域 -->
       <div style="padding: 20px; border-bottom: 1px solid #eee; background-color: #fafafa;">
@@ -91,6 +93,42 @@
         </div>
       </div>
     </el-card>
+      </el-tab-pane>
+      <el-tab-pane label="邀请码管理" name="invites" style="height: 100%;">
+        <el-card style="margin: 20px 0; box-shadow: none; border: none;">
+          <div style="padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: flex-start; gap: 10px; align-items: center;">
+            <span style="color: #909399; font-size: 13px;">生成新邀请码（默认 7 天有效）：</span>
+            <el-input-number v-model="inviteTtlDays" :min="1" :max="365" :step="1" />
+            <span style="color: #909399; font-size: 13px;">天</span>
+            <el-button type="primary" :loading="creatingInvite" @click="handleCreateInvite">生成邀请码</el-button>
+            <el-button @click="fetchInvites">刷新</el-button>
+          </div>
+          <el-table :data="invites" style="width: 100%" v-loading="loadingInvites">
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="code" label="邀请码" width="160">
+              <template #default="{ row }">
+                <code style="font-family: 'Courier New', monospace; font-size: 14px; color: #d4af37;">{{ row.code }}</code>
+              </template>
+            </el-table-column>
+            <el-table-column prop="created_by" label="创建人" width="100" />
+            <el-table-column prop="expires_at" label="过期时间" width="180" />
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }">
+                <el-tag v-if="row.used_at" type="success" size="small">已使用</el-tag>
+                <el-tag v-else-if="isExpired(row.expires_at)" type="danger" size="small">已过期</el-tag>
+                <el-tag v-else type="warning" size="small">未使用</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="used_at" label="使用时间" width="180">
+              <template #default="{ row }">{{ row.used_at || '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="used_by" label="使用者 ID" width="100">
+              <template #default="{ row }">{{ row.used_by || '—' }}</template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 新增/编辑对话框 -->
     <el-dialog
@@ -151,8 +189,47 @@
 defineOptions({ name: 'UserManage' })
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { userApi } from '@/api'
+import { userApi, inviteCodeApi } from '@/api'
 import { auth } from '@/stores/auth'
+
+const activeTab = ref('users')
+
+// 邀请码 tab 状态
+const invites = ref([])
+const loadingInvites = ref(false)
+const creatingInvite = ref(false)
+const inviteTtlDays = ref(7)
+
+const isExpired = (expiresAt) => {
+  if (!expiresAt) return false
+  return new Date(expiresAt) < new Date()
+}
+
+const fetchInvites = async () => {
+  loadingInvites.value = true
+  try {
+    const resp = await inviteCodeApi.list({ page: 1, page_size: 50 })
+    invites.value = resp.data || []
+  } catch (e) {
+    ElMessage.error('加载邀请码失败')
+  } finally {
+    loadingInvites.value = false
+  }
+}
+
+const handleCreateInvite = async () => {
+  creatingInvite.value = true
+  try {
+    const resp = await inviteCodeApi.create({ ttl_days: inviteTtlDays.value })
+    await navigator.clipboard.writeText(resp.code)
+    ElMessage.success(`已生成：${resp.code}（已复制到剪贴板）`)
+    fetchInvites()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '生成失败')
+  } finally {
+    creatingInvite.value = false
+  }
+}
 
 const users = ref([])
 const loading = ref(false)
@@ -309,6 +386,7 @@ const deleteUser = async (row) => {
 
 onMounted(() => {
   fetchUsers()
+  fetchInvites()
 })
 </script>
 

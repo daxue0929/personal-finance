@@ -26,6 +26,13 @@ const routes = [
     meta: { public: true, title: '登录' }
   },
   {
+    // 注册页：独立全屏路由，不套 Layout
+    path: '/signup',
+    name: 'Signup',
+    component: () => import('@/views/Signup.vue'),
+    meta: { public: true, title: '注册' }
+  },
+  {
     path: '/',
     component: Layout,
     redirect: '/dashboard',
@@ -135,6 +142,12 @@ const routes = [
             meta: { title: '用户管理', sort: 53, parentTitle: '系统管理', adminOnly: true }
           }
         ]
+      },
+      {
+        path: '/profile',
+        name: 'Profile',
+        component: () => import('@/views/Profile.vue'),
+        meta: { title: '个人设置', sort: 60, hideInMenu: true }
       }
     ]
   }

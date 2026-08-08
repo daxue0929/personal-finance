@@ -47,11 +47,43 @@
           {{ currentTitle }}
         </div>
         <div v-if="auth.user" style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 14px; color: #303133;">{{ auth.user.display_name || auth.user.username }}</span>
-          <el-tag size="small" :type="isAdmin() ? 'warning' : 'info'">
-            {{ isAdmin() ? '管理员' : '普通用户' }}
-          </el-tag>
-          <el-button link class="logout-btn" @click="handleLogout">退出登录</el-button>
+          <el-alert
+            v-if="auth.impersonate"
+            type="warning"
+            :closable="false"
+            show-icon
+            style="padding: 4px 10px; margin-right: 8px;"
+          >
+            <template #title>
+              正在以 <b>{{ auth.user.display_name || auth.user.username }}</b> 视角操作
+            </template>
+          </el-alert>
+          <el-dropdown v-if="isAdmin()" trigger="click" @command="handleAdminCommand">
+            <span style="font-size: 14px; color: #303133; cursor: pointer;">
+              {{ auth.user.display_name || auth.user.username }}
+              <el-tag size="small" :type="isAdmin() ? 'warning' : 'info'">
+                {{ isAdmin() ? '管理员' : '普通用户' }}
+              </el-tag>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile">个人设置</el-dropdown-item>
+                <el-dropdown-item v-if="auth.impersonate" command="stop-impersonate" divided>
+                  退出视角切换
+                </el-dropdown-item>
+                <el-dropdown-item v-else command="switch-user" divided>切换用户视角</el-dropdown-item>
+                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <template v-else>
+            <span style="font-size: 14px; color: #303133;">{{ auth.user.display_name || auth.user.username }}</span>
+            <el-tag size="small" :type="isAdmin() ? 'warning' : 'info'">
+              {{ isAdmin() ? '管理员' : '普通用户' }}
+            </el-tag>
+            <el-button link @click="router.push('/profile')">个人设置</el-button>
+            <el-button link class="logout-btn" @click="handleLogout">退出登录</el-button>
+          </template>
         </div>
       </el-header>
 
@@ -71,12 +103,12 @@
 <script setup>
 import { computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Setting, Wallet, ShoppingCart, Sell, TrendCharts, Folder, Monitor, User, DataAnalysis, Document, DataLine, PieChart, Coin, Histogram, Odometer, Files } from '@element-plus/icons-vue'
-import { authApi } from '@/api'
+import { authApi, userApi, adminApi } from '@/api'
 import TagsView from '@/components/TagsView.vue'
 import { useTagsView } from '@/composables/useTagsView'
-import { auth, isAdmin, clearAuthUser } from '@/stores/auth'
+import { auth, isAdmin, clearAuthUser, setImpersonate, clearImpersonate } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -148,6 +180,60 @@ const handleLogout = async () => {
   clearAuthUser()
   ElMessage.info('已退出登录')
   router.push('/login')
+}
+
+// admin 顶栏下拉
+const handleAdminCommand = async (cmd) => {
+  if (cmd === 'profile') {
+    router.push('/profile')
+  } else if (cmd === 'switch-user') {
+    await openSwitchUserDialog()
+  } else if (cmd === 'stop-impersonate') {
+    await stopImpersonate()
+  } else if (cmd === 'logout') {
+    handleLogout()
+  }
+}
+
+const stopImpersonate = async () => {
+  try {
+    await adminApi.stopImpersonate()
+  } catch (e) {
+    // 即使后端失败也清前端状态
+  }
+  clearImpersonate()
+  ElMessage.success('已退出视角切换')
+  // 刷新当前页（重新拉取「不切换视角」下的数据）
+  router.go(0)
+}
+
+const openSwitchUserDialog = async () => {
+  try {
+    const { value: userIdStr } = await ElMessageBox.prompt(
+      '请输入目标用户的 user_id（可在「用户管理」页查看）',
+      '切换用户视角',
+      {
+        inputType: 'number',
+        inputPlaceholder: '例如 2',
+        inputValidator: (val) => {
+          const n = Number(val)
+          if (!Number.isInteger(n) || n < 1) return '请输入正整数 user_id'
+          if (n === auth.realUser?.id) return '不能切换到自身'
+          return true
+        },
+        confirmButtonText: '切换',
+        cancelButtonText: '取消',
+      }
+    )
+    const userId = Number(userIdStr)
+    const resp = await adminApi.startImpersonate(userId)
+    const target = resp.target
+    setImpersonate(target, auth.realUser)
+    ElMessage.success(`已切换到 ${target.display_name || target.username} 视角`)
+    router.go(0)  // 刷新当前页加载目标用户数据
+  } catch (e) {
+    // 取消或失败由 ElMessage 已处理
+  }
 }
 </script>
 

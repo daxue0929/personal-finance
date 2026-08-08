@@ -300,3 +300,25 @@ export const positionAnalysisApi = {
   // 获取成本价↔指数对应走势（单持仓，规则 A 固定比例·最新日）
   getCostIndex: (params) => api.get('/positions/snapshot/cost-index', { params })
 }
+
+// 注册（公开端点，登录前可用）
+export const signupApi = {
+  signup: (data) => api.post('/signup', data, { _skipAuthHandler: true })
+}
+
+// 当前用户 self-update
+export const meApi = {
+  updateMe: (data) => api.put('/me', data)
+}
+
+// 邀请码管理（admin only，AC-2）
+export const inviteCodeApi = {
+  list: (params) => api.get('/invite-codes', { params }),
+  create: (data) => api.post('/invite-codes', data)
+}
+
+// admin 切换 user 视角（AC-5）
+export const adminApi = {
+  startImpersonate: (userId) => api.post('/admin/impersonate', { user_id: userId }),
+  stopImpersonate: () => api.delete('/admin/impersonate')
+}
