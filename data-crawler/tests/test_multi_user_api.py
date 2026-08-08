@@ -233,14 +233,18 @@ def test_snapshots_route_passes_user_id_to_storage(client, api, normal_user, log
     assert kwargs['user_id'] == normal_user['id']
 
 
-def test_admin_sees_all_users_data(client, api, admin_user, login, business_storages_mock):
-    """admin 不切换视角时，业务路由 user_id 应为 None（看所有）"""
+def test_admin_sees_own_data_only(client, api, admin_user, login, business_storages_mock):
+    """admin 不切换视角时，业务路由 user_id 应为 admin.id（看自己的数据，不看全部）
+
+    设计：admin 是个具备切换能力的普通 user，自己的数据独立隔离。
+    看其他 user 数据必须显式调 /api/admin/impersonate。
+    """
     login(client, admin_user)
     business_storages_mock['_position_storage'].get_positions_with_pagination.return_value = ([], 0)
     resp = client.get('/api/positions')
     assert resp.status_code == 200
     kwargs = business_storages_mock['_position_storage'].get_positions_with_pagination.call_args.kwargs
-    assert kwargs['user_id'] is None
+    assert kwargs['user_id'] == admin_user['id']
 
 
 # ==================== AC-6+: 持仓分析（snapshot）路由 user_id 过滤 ====================
@@ -350,10 +354,14 @@ def test_snapshot_cost_index_route_passes_user_id(
     assert series_kwargs['user_id'] == normal_user['id'], f'snapshot series kwargs={series_kwargs}'
 
 
-def test_snapshot_admin_no_user_id(
+def test_snapshot_admin_sees_own_data(
     client, api, admin_user, login, business_storages_mock,
 ):
-    """admin 不切换视角时，snapshot 路由的 user_id 应为 None（看所有 user）"""
+    """admin 不切换视角时，snapshot 路由的 user_id 应为 admin.id（看自己的数据）
+
+    设计：跟普通 user 一样，admin 的数据也独立隔离；想看其他 user 必须
+    显式切换视角。
+    """
     login(client, admin_user)
     snaps = business_storages_mock['_position_snapshot_storage']
     seller = business_storages_mock['_seller_storage']
@@ -368,9 +376,9 @@ def test_snapshot_admin_no_user_id(
     seller.get_realized_profit_total.return_value = 0.0
 
     client.get('/api/positions/snapshot/options')
-    assert snaps.get_position_options.call_args.kwargs['user_id'] is None
+    assert snaps.get_position_options.call_args.kwargs['user_id'] == admin_user['id']
 
     client.get('/api/positions/snapshot/analysis?position_id=all')
-    assert snaps.get_portfolio_snapshot_series.call_args.kwargs['user_id'] is None
-    assert snaps.get_latest_snapshot_all_positions.call_args.kwargs['user_id'] is None
-    assert seller.get_realized_profit_total.call_args.kwargs['user_id'] is None
+    assert snaps.get_portfolio_snapshot_series.call_args.kwargs['user_id'] == admin_user['id']
+    assert snaps.get_latest_snapshot_all_positions.call_args.kwargs['user_id'] == admin_user['id']
+    assert seller.get_realized_profit_total.call_args.kwargs['user_id'] == admin_user['id']

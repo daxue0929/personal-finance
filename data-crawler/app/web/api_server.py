@@ -145,9 +145,13 @@ def _is_admin(user):
 def _current_user_id():
     """返回当前请求应当使用的 user_id。
 
-    - 普通 user / admin 不切换：g.user['id']
+    - 普通 user / admin 不切换：g.user['id']（admin 自己的数据也独立隔离）
     - admin 切换视角（session 写入 impersonate_user_id）：target user id
-    - admin 不切换：None（表示看所有用户数据）
+
+    设计说明：admin 不是「看所有人的上帝视角」，而是「一个具备切换能力
+    的普通 user」。admin 自己看 admin 视角时只看 admin 自己的数据；
+    想看其他 user 数据时必须显式调用「切换用户视角」接口，session 写入
+    impersonate_user_id 后才会以 target user 身份读数据。
     """
     user = getattr(g, 'user', None)
     if not user:
@@ -155,9 +159,6 @@ def _current_user_id():
     impersonate_id = session.get('impersonate_user_id')
     if _is_admin(user) and impersonate_id is not None:
         return int(impersonate_id)
-    # admin 不切换时返 None（不过滤），普通 user 始终返自己 id
-    if _is_admin(user):
-        return None
     return user['id']
 
 
