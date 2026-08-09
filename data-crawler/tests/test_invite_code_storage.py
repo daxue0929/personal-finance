@@ -129,6 +129,33 @@ def test_validate_not_found_returns_none():
     assert result is None
 
 
+def test_validate_handles_naive_datetime_from_mysql():
+    """真实场景：MySQL DATETIME 列读出是 naive datetime（无 tzinfo）。
+
+    validate() 必须把 naive 视作北京时间（与 create() 写入语义一致），
+    不能再抛 `TypeError: can't compare offset-naive and offset-aware datetimes`。
+
+    这是 2026-08-09 线上 bug 复现测试：现有 helper 默认构造 aware datetime，
+    跟生产 MySQL 行为不一致，导致 validate() 在真实环境下对所有新生成的码失败。
+    """
+    storage, mock_session = _make_storage_with_mock_session()
+    # 关键：expires_at 是 naive datetime（无 tzinfo），模拟 MySQL DATETIME 真实行为
+    naive_expires_at = datetime(2099, 12, 31, 23, 59, 59)
+    assert naive_expires_at.tzinfo is None  # 显式断言测试输入是 naive
+    valid_row = _make_invite_row(
+        code='NAIVE001',
+        used_at=None,
+        del_flag='1',
+        expires_at=naive_expires_at,
+    )
+    mock_session.query.return_value.filter.return_value.first.return_value = valid_row
+
+    # 修复前会抛 TypeError，修复后应正常返 dict
+    result = storage.validate('NAIVE001')
+    assert result is not None
+    assert result['code'] == 'NAIVE001'
+
+
 # ==================== 3. mark_used 置 used_at + used_by ====================
 
 def test_mark_used_sets_timestamp_and_user():

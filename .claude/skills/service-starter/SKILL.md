@@ -169,7 +169,7 @@ cd ${BACKEND_DIR} && SCHEDULER_INTERNAL_URL=http://localhost:5002 ${PYTHON_PATH}
 cd ${FRONTEND_DIR} && npm run dev
 ```
 
-> **scheduler 进程会连生产库（`MYSQL_HOST=117.72.53.38`）并按 `task_schedule` 表跑真实爬虫任务**（基金净值更新 `*/30 * * * *`、科创50/100 指数抓取 `* 9-15 * * mon-fri` 等）。若只是调试前端/不想动生产数据，可**只起 web + frontend**（跳过 4.1），登录与 CRUD 不依赖 scheduler，仅控制类接口会 502。
+> **scheduler 进程会按 `task_schedule` 表跑爬虫任务**（基金净值更新 `*/30 * * * *`、科创50/100 指数抓取 `* 9-15 * * mon-fri` 等）。**默认连本地库**（`.env` 的 `MYSQL_HOST`，本仓库 `.env` 已配 `127.0.0.1`）。若不想触发爬虫只想调试前端/CRUD，可**只起 web + frontend**（跳过 4.1），登录与 CRUD 不依赖 scheduler，仅控制类接口会 502。
 
 ### Step 5: Verify Startup
 
@@ -308,8 +308,8 @@ conda run -n personal-finance pip install -r requirements.txt
 
 ### Database Connection Failed
 **Check**: `${BACKEND_DIR}/.env` 的 `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` 是否正确。  
-**注意**：本地 scheduler/web 默认连**生产库**（`117.72.53.38`）。
+**注意**：本仓库 `.env` 默认 `MYSQL_HOST=127.0.0.1`（本地库）。若要连生产库需自行改为 `117.72.53.38` 并提供生产密码——**不推荐本地开发直连生产**。
 
-### scheduler 连生产库跑真实爬虫
+### scheduler 本地爬虫跑在本地库
 **Symptom**: 不想触发爬虫却被 scheduler 跑了任务  
 **Fix**: 只起 web + frontend（跳过 scheduler）。登录/用户管理/CRUD 不依赖 scheduler。

@@ -256,15 +256,19 @@ class PositionStorage(StorageBase):
         finally:
             session.close()
 
-    def get_all_active_positions(self):
+    def get_all_active_positions(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取全部有效持仓（del_flag='1'），供 Dashboard 实时持仓占比饼图。
 
+        :param user_id 限定 user；None = 不过滤（admin 跨用户视角）
         返回每项含 fund_code/fund_name/current_value 的 dict 列表。
         current_value 用 position 表冗余字段（份额×当前净值，买入/刷新份额时维护）。
         """
         session = self.get_session()
         try:
-            rows = session.query(Position).filter(Position.del_flag == '1').all()
+            query = session.query(Position).filter(Position.del_flag == '1')
+            if user_id is not None:
+                query = query.filter(Position.user_id == user_id)
+            rows = query.all()
             return [{
                 'fund_code': p.fund_code,
                 'fund_name': p.fund_name or '',

@@ -178,10 +178,16 @@ def _current_user_id_strict():
 
 
 def admin_required(func):
-    """管理员权限装饰器：非管理员返回 403。须置于 @log_request 之下。"""
+    """管理员权限装饰器：非管理员返回 403。须置于 @log_request 之下。
+
+    检查真实身份（g.real_user）而非 g.user：impersonation 时 g.user 已被覆盖为 target，
+    若检查 g.user 会误拦 admin 的 stop_impersonate / start_impersonate 等操作。
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if not _is_admin(getattr(g, 'user', None)):
+        # g.real_user 在 require_auth 钩子里设置（impersonation 前的 admin 身份）
+        real_user = getattr(g, 'real_user', None)
+        if not _is_admin(real_user):
             return jsonify({'error': '无权限'}), 403
         return func(*args, **kwargs)
     return wrapper
@@ -214,6 +220,9 @@ def require_auth():
         return jsonify({'error': '未登录或登录已过期'}), 401
 
     g.user = user
+    # 保留真实身份：admin_required / 后续逻辑需按真实 admin 判断，
+    # 不能用 g.user（impersonation 时会被覆盖为 target）
+    g.real_user = user
 
     # admin 切换视角：用 target user 覆盖 g.user，便于业务路由通过 g.user 拿到目标身份
     impersonate_id = session.get('impersonate_user_id')
@@ -267,8 +276,20 @@ def logout():
 @app.route('/api/me', methods=['GET'])
 @log_request
 def get_me():
-    """获取当前登录用户信息"""
-    return jsonify({'user': getattr(g, 'user', None)}), 200
+    """获取当前登录用户信息
+    admin 切换视角时同时返回 realUser / impersonate 标记，便于前端 reload 后恢复顶栏状态
+    """
+    user = getattr(g, 'user', None)
+    if not user:
+        return jsonify({'user': None}), 200
+    resp = {'user': user}
+    # impersonated_by 由 before_request 钩子在 admin 切视角时写入（line 224）
+    if getattr(g, 'impersonated_by', None) is not None:
+        real_admin = _user_storage.get_user_by_id(g.impersonated_by)
+        if real_admin:
+            resp['realUser'] = real_admin
+            resp['impersonate'] = True
+    return jsonify(resp), 200
 
 
 @app.route('/api/me', methods=['PUT'])
@@ -2175,13 +2196,15 @@ def get_position_by_fund():
 @app.route('/api/positions/allocation', methods=['GET'])
 @log_request
 def get_positions_allocation():
-    """Dashboard 持仓占比（实时）：全量有效持仓按市值占比
+    """Dashboard 持仓占比（实时）：当前用户有效持仓按市值占比
 
     数据源为实时 position 表（current_value），非历史快照。
+    按 user 隔离：admin 切视角到 target 后只看到 target 自己的持仓；
+    admin 自身视角下也只看到自己的持仓（_current_user_id 返回 admin id）。
     返回 {data:[{fund_code, fund_name, value, percent}]}，无持仓返回空。
     """
     try:
-        positions = _position_storage.get_all_active_positions()
+        positions = _position_storage.get_all_active_positions(user_id=_current_user_id())
         allocation = calc_position_allocation(positions)
         return jsonify({'data': allocation}), 200
     except Exception as e:

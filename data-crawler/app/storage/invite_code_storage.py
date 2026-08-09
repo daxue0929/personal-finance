@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..utils.db import get_db_engine, get_db_session
 from ..utils.logger import logger
-from ..utils.datetime_utils import get_beijing_now
+from ..utils.datetime_utils import get_beijing_now, BEIJING_TZ
 from .base import Base, StorageBase
 
 
@@ -134,9 +134,16 @@ class InviteCodeStorage(StorageBase):
                 logger.info(f"邀请码已被使用: {code}")
                 return None
             now = get_beijing_now()
-            if invite.expires_at and invite.expires_at < now:
-                logger.info(f"邀请码已过期: {code} (expires_at={invite.expires_at})")
-                return None
+            if invite.expires_at:
+                # MySQL DATETIME 列无 tzinfo，naive 视作北京时间（与 create() 写入语义一致）
+                expires_at_aware = (
+                    invite.expires_at
+                    if invite.expires_at.tzinfo
+                    else invite.expires_at.replace(tzinfo=BEIJING_TZ)
+                )
+                if expires_at_aware < now:
+                    logger.info(f"邀请码已过期: {code} (expires_at={invite.expires_at})")
+                    return None
             return _to_dict(invite)
         except Exception as e:
             logger.error(f"校验邀请码 {code} 失败: {e}")
@@ -185,7 +192,9 @@ class InviteCodeStorage(StorageBase):
             if not include_used:
                 query = query.filter(InviteCode.used_at.is_(None))
             if not include_expired:
-                query = query.filter(InviteCode.expires_at >= get_beijing_now())
+                # SQL 侧比较：DB 存的是 Beijing wall clock，剥 tz 传 naive 避免 MySQL server tz 干扰
+                naive_now = get_beijing_now().replace(tzinfo=None)
+                query = query.filter(InviteCode.expires_at >= naive_now)
 
             query = query.order_by(InviteCode.create_time.desc())
             total = query.count()
