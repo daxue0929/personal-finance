@@ -21,8 +21,24 @@ export const auth = reactive({
 let _readyResolve
 const _readyPromise = new Promise((resolve) => { _readyResolve = resolve })
 
-/** 首次 /api/me 探测完成时调用（无论成功失败） */
-export const finishAuthProbe = (user) => setAuthUser(user)
+/** 首次 /api/me 探测完成时调用（无论成功失败）
+ *  payload 格式：{ user, realUser?, impersonate? }
+ *  - 普通登录：payload = { user } 或 null
+ *  - admin 切换视角：payload = { user: target, realUser: admin, impersonate: true }
+ */
+export const finishAuthProbe = (payload) => {
+  const user = payload?.user || null
+  if (payload && payload.impersonate && payload.realUser) {
+    setImpersonate(user, payload.realUser)
+  } else {
+    setAuthUser(user)
+  }
+  // setImpersonate 不会标 ready，补一下以免 router guard 的 whenReady() 永久 hang
+  if (!auth.ready) {
+    auth.ready = true
+    _readyResolve()
+  }
+}
 
 /** 登录成功后设置当前用户 */
 export function setAuthUser(user) {

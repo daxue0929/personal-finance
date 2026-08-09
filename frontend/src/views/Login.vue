@@ -1,7 +1,7 @@
 <template>
-  <div class="login-wrap">
+  <div class="auth-wrap">
     <!-- 左：深色品牌面板（金库门） -->
-    <div class="login-brand">
+    <div class="auth-brand">
       <div class="brand-mark">
         <span class="seal">◆</span>
         <span class="brand-title">理财管理系统</span>
@@ -17,8 +17,8 @@
     </div>
 
     <!-- 右：登录表单 -->
-    <div class="login-form-wrap">
-      <div class="login-form">
+    <div class="auth-form-wrap">
+      <div class="auth-form">
         <h2 class="form-title">欢迎回来</h2>
         <p class="form-sub">登录以继续</p>
         <el-form :model="form" label-position="top" @submit.prevent="handleLogin">
@@ -46,11 +46,19 @@
           </el-form-item>
           <div v-if="errorMsg" class="form-error" role="alert">{{ errorMsg }}</div>
           <el-button
-            class="login-btn"
+            class="auth-btn"
             :loading="loading"
             :disabled="!form.username || !form.password"
             @click="handleLogin"
           >登 录</el-button>
+          <div class="auth-foot">
+            还没有账号？<el-link
+              type="primary"
+              :underline="false"
+              aria-label="使用邀请码注册新账号"
+              @click="$router.push('/signup')"
+            >立即注册</el-link>
+          </div>
         </el-form>
       </div>
     </div>
@@ -98,7 +106,7 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
-.login-wrap {
+.auth-wrap {
   display: flex;
   height: 100vh;
   width: 100%;
@@ -106,7 +114,7 @@ const handleLogin = async () => {
 }
 
 /* 左侧深色品牌面板 —— 比侧边栏 #545c64 更深一档，强调「门」 */
-.login-brand {
+.auth-brand {
   position: relative;
   flex: 0 0 55%;
   background: #2c3033;
@@ -152,14 +160,14 @@ const handleLogin = async () => {
 }
 
 /* 右侧表单 */
-.login-form-wrap {
+.auth-form-wrap {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #fff;
 }
-.login-form {
+.auth-form {
   width: 100%;
   max-width: 360px;
   padding: 24px;
@@ -187,7 +195,7 @@ const handleLogin = async () => {
 }
 
 /* 金色主按钮 —— 登录页唯一的金色时刻，进入工作区后主按钮回到 EP 蓝 */
-.login-btn {
+.auth-btn {
   width: 100%;
   height: 44px;
   font-weight: 700;
@@ -196,28 +204,28 @@ const handleLogin = async () => {
   border-color: #ffd04b;
   color: #2c3033;
 }
-.login-btn:hover,
-.login-btn:focus {
+.auth-btn:hover,
+.auth-btn:focus {
   background: #f0c93a;
   border-color: #f0c93a;
   color: #2c3033;
 }
-.login-btn.is-disabled,
-.login-btn.is-disabled:hover {
+.auth-btn.is-disabled,
+.auth-btn.is-disabled:hover {
   background: rgba(255, 208, 75, 0.5);
   border-color: rgba(255, 208, 75, 0.5);
   color: #2c3033;
 }
 
 /* 金色焦点环：与深面板封印呼应 */
-.login-form :deep(.el-input__wrapper.is-focus) {
+.auth-form :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 1px #ffd04b inset, 0 0 0 2px rgba(255, 208, 75, 0.25);
 }
 
 /* 移动端：堆叠，深色面板收为 120px 顶带（仅留品牌标 + 金菱形），账本纹理与副标隐藏 */
 @media (max-width: 768px) {
-  .login-wrap { flex-direction: column; }
-  .login-brand {
+  .auth-wrap { flex-direction: column; }
+  .auth-brand {
     flex: 0 0 auto;
     height: 120px;
     padding: 0 24px;
@@ -226,7 +234,7 @@ const handleLogin = async () => {
   }
   .brand-sub,
   .ledger { display: none; }
-  .login-form-wrap {
+  .auth-form-wrap {
     flex: 1;
     padding: 24px;
     align-items: flex-start;
@@ -235,6 +243,21 @@ const handleLogin = async () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .login-form { animation: none; }
+  .auth-form { animation: none; }
+}
+
+/* 底部链接：登录 ↔ 注册 互相跳转的入口 */
+.auth-foot {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #606266;
+}
+.auth-foot :deep(.el-link) {
+  display: inline-block;
+  min-height: 44px;
+  line-height: 44px;
+  padding: 0 12px;
+  vertical-align: middle;
 }
 </style>

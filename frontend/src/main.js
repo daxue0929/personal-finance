@@ -16,7 +16,8 @@ app.use(router)
 ;(async () => {
   try {
     const res = await authApi.me()
-    finishAuthProbe(res.user)
+    // res 可能是 { user } 或 { user, realUser, impersonate: true }（admin 切视角时）
+    finishAuthProbe(res)
   } catch (e) {
     finishAuthProbe(null)
   }
