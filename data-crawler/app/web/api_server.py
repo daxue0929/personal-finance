@@ -1402,32 +1402,70 @@ def backfill_buyer():
         fund_info = _fund_storage.get_fund_by_code(fund_code)
         latest_nav = float(fund_info.net_asset_value) if (fund_info and fund_info.net_asset_value) else nav
 
-        # 3. 建买入记录（PENDING），拿 id
+        # 3. 优先复活软删记录，无则建新买入记录（PENDING），拿 id
+        # 修复 bug：fund_buyer.uk_fund_code_time_type 唯一键不含 del_flag，
+        # 软删的同 (fund_code, time, type) 记录会阻塞新插入。
+        # 应用层复活：原地 update + del_flag='1'，避免去 DDL 改键。
         session = _buyer_storage.Session()
         try:
-            new_buyer = FundBuyer(
-                fund_code=fund_code,
-                fund_name=data.get('fund_name', ''),
-                time=dt.strptime(buy_date, '%Y-%m-%d').date(),
-                amt=amt,
-                type=data.get('type', '1'),
-                policy='',
-                buy_status='PENDING',
-                remark=data.get('remark', ''),
-                del_flag='1',
-                create_by='api',
-                create_time=get_beijing_now(),
-                update_by='api',
-                update_time=get_beijing_now(),
-            )
-            session.add(new_buyer)
-            session.commit()
-            session.refresh(new_buyer)
-            buyer_id = new_buyer.id
+            buy_date_obj = dt.strptime(buy_date, '%Y-%m-%d').date()
+            buy_type = data.get('type', '1')
+
+            # 3.1 查软删记录（同 fund_code+time+type, del_flag='0'）
+            soft_deleted = session.query(FundBuyer).filter(
+                FundBuyer.fund_code == fund_code,
+                FundBuyer.time == buy_date_obj,
+                FundBuyer.type == buy_type,
+                FundBuyer.del_flag == '0',
+            ).first()
+
+            if soft_deleted is not None:
+                # 3.2 复活：原地覆盖字段 + del_flag='1'
+                soft_deleted.fund_name = data.get('fund_name', '')
+                soft_deleted.amt = amt
+                soft_deleted.remark = data.get('remark', '')
+                soft_deleted.buy_status = 'PENDING'
+                soft_deleted.update_by = 'api'
+                soft_deleted.update_time = get_beijing_now()
+                soft_deleted.del_flag = '1'
+                session.commit()
+                session.refresh(soft_deleted)
+                buyer_id = soft_deleted.id
+            else:
+                # 3.3 新建
+                new_buyer = FundBuyer(
+                    fund_code=fund_code,
+                    fund_name=data.get('fund_name', ''),
+                    time=buy_date_obj,
+                    amt=amt,
+                    type=buy_type,
+                    policy='',
+                    buy_status='PENDING',
+                    remark=data.get('remark', ''),
+                    del_flag='1',
+                    create_by='api',
+                    create_time=get_beijing_now(),
+                    update_by='api',
+                    update_time=get_beijing_now(),
+                )
+                session.add(new_buyer)
+                session.commit()
+                session.refresh(new_buyer)
+                buyer_id = new_buyer.id
         except IntegrityError as e:
+            # 3.4 兜底：INSERT 撞唯一键（活记录已存在），回滚后查实际冲突行
             session.rollback()
-            logger.warning(f"补录撞唯一键: {e}")
-            return jsonify({'error': f'该基金在 {buy_date} 该买入类型已存在记录，无法重复补录（可删除/编辑已有记录）'}), 400
+            existing = session.query(FundBuyer).filter(
+                FundBuyer.fund_code == fund_code,
+                FundBuyer.time == buy_date_obj,
+                FundBuyer.type == buy_type,
+            ).first()
+            if existing is not None:
+                logger.warning(f"补录撞唯一键（活记录）: {e}")
+                return jsonify({'error': f'该基金在 {buy_date} 该买入类型已存在记录，无法重复补录（可删除/编辑已有记录）'}), 400
+            # 真正约束冲突（非复活场景的 IntegrityError）
+            logger.error(f"补录建记录异常: {e}")
+            return jsonify({'error': str(e)}), 500
         except Exception as e:
             session.rollback()
             logger.error(f"补录建记录失败: {e}")
