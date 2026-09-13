@@ -85,3 +85,4 @@ frontend/.vite/
 .mcp.json
 
 .trae/mcp.json
+.playwright-mcp
