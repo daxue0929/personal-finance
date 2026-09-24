@@ -6,12 +6,19 @@ from datetime import datetime as dt, timedelta
 import time
 import functools
 import os
+import json
+from dataclasses import asdict
 from sqlalchemy import text
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from ..utils.logger import logger, trace_id_var, request_method_var, request_path_var, request_ip_var, category_var
 from ..storage import TaskScheduleStorage, FundInfoStorage, FundBuyerStorage, FundSellerStorage, FundNavHistoryStorage, PortfolioStorage, PositionStorage, PortfolioPositionStorage, PortfolioPosition, UserStorage, IndexInfoStorage, PositionDailySnapshotStorage, FundDipPlanStorage, TaskRunRecordStorage, IndexBasicStorage, InviteCodeStorage
 from ..analytics import calc_moving_average, calc_volatility, calc_annualized_return, calc_change_distribution, calc_monthly_returns, calc_ma_signal, calc_bollinger_bands, calc_bollinger_signal, calc_position_overview, calc_position_allocation, calc_portfolio_profit_series, calc_portfolio_overview, compute_cost_index_series, filter_trading_days
 from ..utils.datetime_utils import get_beijing_now
+from ..utils import get_paddle_ocr_client
+from ..utils.image_utils import decode_base64_image, detect_image_extension, save_temp_image
+from ..parser.alipay_record_parser import AlipayRecordParser
+from .ocr_auth import require_ocr_auth
 from . import scheduler_proxy
 
 app = Flask(__name__)
@@ -46,6 +53,9 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=60)
 # 关闭「每次响应都刷新 Cookie」：让登录时按用户 TTL 烘焙的 Cookie 保持原样直到自然过期，
 # 避免 app 级 permanent_session_lifetime 在多用户间交叉污染（默认 True 会使最后登录者的 TTL 覆盖所有人）
 app.config['SESSION_REFRESH_EACH_REQUEST'] = False
+# 请求体上限 15MB：OCR 接口接收 base64 图片（10MB 图片 ≈ 13.3MB base64），
+# 现有接口均为小 JSON 不受影响；超限 Flask 自动返回 413
+app.config['MAX_CONTENT_LENGTH'] = 15 * 1024 * 1024
 
 
 def log_request(func):
@@ -56,7 +66,11 @@ def log_request(func):
         method = request.method
         path = request.path
         query_params = request.args.to_dict()
-        body = request.get_json(silent=True) if request.data else None
+        # 大体积 body（如 OCR 接口的 base64 图片）跳过记录，避免刷屏/写爆 system_log
+        if path in _LOG_BODY_SKIP_PATHS:
+            body = '<skipped: 内容过大>'
+        else:
+            body = request.get_json(silent=True) if request.data else None
         
         # 获取或生成TraceID
         trace_id = request.headers.get('X-Trace-ID', generate_trace_id())
@@ -136,6 +150,13 @@ def generate_trace_id():
 # 无需登录即可访问的路径
 _PUBLIC_PATHS = {'/api/login', '/api/signup'}
 
+# 走 Basic Auth（非会话登录）的对外开放路径：豁免 require_auth 会话校验，
+# 由路由上的 require_ocr_auth 装饰器独立鉴权
+_BASIC_AUTH_PATHS = {'/api/ocr/recognize'}
+
+# log_request 不记录请求体的路径（base64 图片等大体积 body，避免刷屏/写爆 system_log）
+_LOG_BODY_SKIP_PATHS = {'/api/ocr/recognize'}
+
 
 def _is_admin(user):
     """判断是否管理员"""
@@ -205,7 +226,7 @@ def require_auth():
     # 非 /api 路径（如 /health、静态资源）不鉴权
     if not request.path.startswith('/api/'):
         return None
-    if request.path in _PUBLIC_PATHS:
+    if request.path in _PUBLIC_PATHS or request.path in _BASIC_AUTH_PATHS:
         return None
 
     user_id = session.get('user_id')
@@ -2963,6 +2984,44 @@ def toggle_index_basic(index_code):
     except Exception as e:
         logger.error(f"启停指数基础 {index_code} 失败: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ocr/recognize', methods=['POST'])
+@log_request
+@require_ocr_auth
+def ocr_recognize():
+    """OCR 图片识别对外开放接口（Basic Auth，独立于会话登录）。
+
+    请求体 {"images": "<base64 单张图片>"}（兼容 data URI 前缀）。
+    识别结果不写库，日志打印 JSON 并随响应返回；原始图片不持久化
+    （临时文件供 PaddleOCR 读取后 finally 删除）。
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        images = data.get('images')
+        if not isinstance(images, str) or not images.strip():
+            return jsonify({'error': 'images 不能为空（base64 字符串）'}), 400
+        try:
+            image_bytes = decode_base64_image(images)
+        except ValueError:
+            return jsonify({'error': 'images 不是合法的 base64'}), 400
+        if not detect_image_extension(image_bytes):
+            return jsonify({'error': 'images 不是可识别的图片格式（支持 png/jpeg/gif/webp）'}), 400
+        try:
+            with save_temp_image(image_bytes) as tmp_path:
+                blocks = get_paddle_ocr_client().recognize(tmp_path)
+            records = AlipayRecordParser().parse(blocks)
+        except ImportError:
+            logger.error('OCR 接口被调用但 paddleocr 未安装（pip install -r requirements-ocr.txt）')
+            return jsonify({'error': 'OCR 服务未启用'}), 503
+        result = [asdict(r) for r in records]
+        logger.info(f'OCR 识别结果: {json.dumps(result, ensure_ascii=False)}')
+        return jsonify({'count': len(result), 'records': result}), 200
+    except RequestEntityTooLarge:
+        raise  # 请求体超限交由 Flask 返回 413，不落入通用 500
+    except Exception as e:
+        logger.error(f"OCR 识别失败: {e}", exc_info=True)
+        return jsonify({'error': f'OCR 识别失败: {e}'}), 500
 
 
 def start_server_in_background(host='0.0.0.0', port=5000, debug=False):
