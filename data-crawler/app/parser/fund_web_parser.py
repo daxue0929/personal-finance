@@ -6,7 +6,7 @@
 与 fund_parser.py（requests 抓 .js 接口）并行，本解析器用 Playwright 抓 fundf10
 网页 HTML，识别清洗基本概况字段。不动现有两个 parser。
 
-设计（见 tasks/design-fund-web-scraper.md）：
+设计（见 tasks/202607_基金网页爬虫/design-fund-web-scraper.md）：
 - fetch(fund_code): 走 PlaywrightClient 取 HTML -> _parse
 - _parse(html, fund_code): 纯函数，BeautifulSoup 解析，无外部依赖，可独立测试
 - 依赖 app.utils.playwright_client 单例（browser 长连 + page 临时）

@@ -6,7 +6,7 @@ Playwright 浏览器客户端管理模块
 提供进程内复用的 browser 长连 + page 临时管理。参照 app/utils/db.py 的
 DatabaseManager 单例模式：__new__ 单例 + 惰性 init + os.getenv 配置 + 模块级实例。
 
-设计要点（见 tasks/design-fund-web-scraper.md）：
+设计要点（见 tasks/202607_基金网页爬虫/design-fund-web-scraper.md）：
 - browser 常驻（随进程生命周期），page 每次 new_page() 创建、with 退出关闭。
 - 惰性 init：构造不连接，首次 new_page 才 _ensure_connected。
 - 连接断开时 _ensure_connected 重新 connect_over_cdp。
