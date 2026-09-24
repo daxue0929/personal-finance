@@ -1,5 +1,5 @@
-# OCR 可选依赖（仅本地/开发使用，不进生产镜像，避免镜像膨胀数百 MB）
-# 安装：pip install -r requirements-ocr.txt
+# OCR 依赖（/api/ocr/recognize 接口）。已进生产镜像（Dockerfile 统一安装）；
+# 本地开发手动安装：pip install -r requirements-ocr.txt
 paddlepaddle==3.3.0
 paddleocr==3.6.0
 openpyxl==3.1.5

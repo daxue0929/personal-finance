@@ -357,3 +357,87 @@ UPDATE task_schedule SET enabled=0, update_by='rollback', update_time=NOW()
 - **不要**直接 DELETE `index_basic` 行的 `del_flag` 检查：项目无外键约束，软删后 `index_info` 历史行不会自动清理（这是设计如此，符合「软删保留历史」约定）
 - **不要**手动改 `fetch_all_indexes_task` 的 cron 表达式绕过 `task_schedule` 哈希比对：调度器 60s 内会自动热加载新 cron
 - **新增指数**走前端 `/index/basic` 管理页（无需 DBA 改代码）：填 `index_code` + `market` + `index_name` + `enabled=1` 即可，下次 `fetch_all_indexes_task` 自动抓
+
+## OCR 识别接口（ocr-recognize-api）部署
+
+`POST /api/ocr/recognize` 挂在 web 进程（5000 对外），外部系统上传支付宝交易记录截图（base64），返回结构化交易记录 JSON。本期不写库，结果随响应返回并打印日志。
+
+### 依赖与模型缓存
+
+- OCR 依赖（paddlepaddle + paddleocr + 系统库 libgl1/libglib2.0-0/libgomp1）**已进生产镜像**：`Dockerfile` 统一安装 `requirements-ocr.txt`，web/scheduler 共用镜像（scheduler 不调用 OCR、不加载模型，仅共享磁盘占用）。
+- 镜像因此增大约 1GB，`./deploy.sh` 构建时间相应变长（paddle wheel 体积大，耐心等）。
+- **模型缓存**：PaddleOCR 模型首次识别时才下载（数百 MB 到容器内 `/root/.paddlex`）。docker-compose 给 web 挂了命名卷 `paddle-models` → `/root/.paddlex`，`deploy.sh` 每次 force-recreate web 后模型不丢，只有**首次** OCR 请求需要联网下载（耗时较长，属正常）。
+- 若 OCR 未正确安装，接口返回 503 `{"error": "OCR 服务未启用"}`，不影响其他接口。
+
+### 配置 `.env`
+
+服务器 `.env` 追加（与本地开发用**不同的独立强随机值**，可用 `python -c "import secrets; print(secrets.token_urlsafe(36))"` 生成）：
+
+```bash
+OCR_API_CLIENT_ID=<强随机值>
+OCR_API_CLIENT_SECRET=<强随机值>
+```
+
+> 注意：不配这两项时 docker-compose 会传空值，认证模块 fail-closed，接口一律 401。
+
+### 部署步骤
+
+```bash
+cd personal-finance
+git pull                          # 拿到含 OCR 依赖的 Dockerfile 与 compose 配置
+# vi data-crawler/.env           # 追加上面两个 OCR 凭证（首次部署本接口时）
+cd data-crawler
+./deploy.sh                       # 重建镜像（装 OCR 依赖，较慢）+ 重建 web/scheduler
+```
+
+### 部署后验证
+
+```bash
+# 1. 容器状态（web/scheduler Up，browser 不动）
+docker compose ps
+
+# 2. 模型缓存卷已创建
+docker volume ls | grep paddle-models
+
+# 3. 无凭证 → 401
+curl -s -X POST http://localhost:5000/api/ocr/recognize \
+  -H 'Content-Type: application/json' -d '{"images":"x"}'
+# 期望：{"error":"认证失败"}
+
+# 4. 正确凭证 + 仓库内真实截图 → 200（首次请求会下载模型，可能耗时 1-2 分钟）
+OCR_API_CLIENT_ID=<服务器 .env 中的值> OCR_API_CLIENT_SECRET=<服务器 .env 中的值> python3 - <<'EOF'
+import base64, json, os, urllib.request
+b64 = base64.b64encode(open('tests/images/20260924130253_9_374.jpg','rb').read()).decode()
+cred = base64.b64encode(f"{os.environ['OCR_API_CLIENT_ID']}:{os.environ['OCR_API_CLIENT_SECRET']}".encode()).decode()
+req = urllib.request.Request('http://localhost:5000/api/ocr/recognize',
+    data=json.dumps({'images': b64}).encode(),
+    headers={'Content-Type': 'application/json', 'Authorization': f'Basic {cred}'})
+with urllib.request.urlopen(req, timeout=300) as resp:
+    body = json.loads(resp.read())
+    print('HTTP', resp.status, '| count =', body['count'])
+    print(json.dumps(body['records'][:2], ensure_ascii=False, indent=2))
+EOF
+# 期望：count = 9，records 为华夏科创50ETF联接C(011613) 的定投记录
+
+# 5. 日志确认：结果 JSON 带 trace_id，且无 base64 原文
+docker compose logs web | grep "OCR 识别结果"
+```
+
+### 调用示例
+
+```bash
+# 图片转 base64（macOS: base64 -i screenshot.jpg；Linux: base64 -w0 screenshot.jpg）
+TOKEN=$(printf '%s:%s' "$OCR_API_CLIENT_ID" "$OCR_API_CLIENT_SECRET" | base64)
+curl -X POST http://<host>:5000/api/ocr/recognize \
+  -H "Authorization: Basic $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"images": "<base64 图片>"}'
+```
+
+成功返回 `{"count": n, "records": [{"fund_name", "trade_type", "amount", "status", "trade_time"}]}`；失败统一 `{"error": ...}` + 400（参数）/ 401（认证）/ 413（超限 15MB）/ 500 / 503（OCR 未启用）。
+
+### 注意事项
+
+- 请求体上限 15MB（`MAX_CONTENT_LENGTH` 全局配置，现有接口均为小 JSON 不受影响）。
+- 识别结果 JSON 打印 INFO 日志（带 trace_id，可查 `system_log`）；请求体 base64 原文**不进日志**（该路径跳过 body 记录）。
+- 原始图片不持久化：临时文件供 PaddleOCR 读取后 finally 删除。

@@ -14,9 +14,15 @@ services:
       - SCHEDULER_INTERNAL_URL=http://scheduler:5001
       - SECRET_KEY=${SECRET_KEY}
       - FLASK_COOKIE_SECURE=${FLASK_COOKIE_SECURE:-false}
+      # OCR 识别接口（/api/ocr/recognize）Basic Auth 凭证，服务器 .env 配置
+      - OCR_API_CLIENT_ID=${OCR_API_CLIENT_ID}
+      - OCR_API_CLIENT_SECRET=${OCR_API_CLIENT_SECRET}
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+      # PaddleOCR 模型缓存（首次识别下载数百 MB 到 /root/.paddlex），
+      # 命名卷持久化：deploy.sh 每次 force-recreate web 容器后不丢失，避免每次部署重新下载
+      - paddle-models:/root/.paddlex
     depends_on:
       - scheduler
     restart: unless-stopped
@@ -71,3 +77,7 @@ services:
 networks:
   fund-network:
     driver: bridge
+
+volumes:
+  # PaddleOCR 模型缓存（web 容器 /root/.paddlex），跨部署持久化
+  paddle-models:

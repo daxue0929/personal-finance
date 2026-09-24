@@ -12,7 +12,10 @@ PlaywrightClient 单例模式：__new__ 单例 + 惰性 init + 模块级实例�
 - paddleocr 延迟 import（在 _ensure_initialized 内部），未安装时 import 本
   模块不受影响（paddleocr import 有副作用，且 OCR 是可选本地能力）。
 - 识别异常返回空列表并记 ERROR 日志，不中断调用方（参照 run_with_trace_context 思想）。
-- OCR 依赖不进生产镜像，安装：pip install -r requirements-ocr.txt
+- OCR 依赖已进生产镜像（Dockerfile 安装 requirements-ocr.txt）；本地开发手动安装：
+  pip install -r requirements-ocr.txt
+- 生产容器模型缓存在 /root/.paddlex，由 docker-compose 的 paddle-models 命名卷持久化，
+  避免每次部署（force-recreate）后重新下载模型。
 """
 
 from dataclasses import dataclass
