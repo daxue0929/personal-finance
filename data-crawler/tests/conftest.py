@@ -124,6 +124,22 @@ def _make_position(**overrides):
     return base
 
 
+def paddleocr_installed():
+    """paddleocr 是否已安装（真实 OCR 集成测试的前置条件）"""
+    try:
+        import paddleocr  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+# 真实 OCR 集成测试统一 skip 守卫：未安装 paddleocr 时跳过并给出安装指引
+requires_ocr = pytest.mark.skipif(
+    not paddleocr_installed(),
+    reason='paddleocr 未安装，跳过真实 OCR 测试；安装：pip install -r requirements-ocr.txt',
+)
+
+
 @pytest.fixture
 def api():
     from app.web import api_server

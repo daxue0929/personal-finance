@@ -14,6 +14,7 @@ from .datetime_utils import (
     BEIJING_TZ
 )
 from .excel_utils import ExcelUtils
+from .paddle_ocr_client import OcrTextBlock, PaddleOcrClient, get_paddle_ocr_client
 
 __all__ = [
     'DB_CONFIG', 
@@ -30,5 +31,8 @@ __all__ = [
     'is_after_trading_hours',
     'format_datetime',
     'BEIJING_TZ',
-    'ExcelUtils'
+    'ExcelUtils',
+    'OcrTextBlock',
+    'PaddleOcrClient',
+    'get_paddle_ocr_client',
 ]
